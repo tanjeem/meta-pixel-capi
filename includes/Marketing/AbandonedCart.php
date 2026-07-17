@@ -35,10 +35,8 @@ class AbandonedCart {
 		if ( is_user_logged_in() ) {
 			$email = wp_get_current_user()->user_email;
 		} else {
-			$checkout_data = WC()->session->get( 'mpc_checkout_user_data', [] );
-			if ( ! empty( $checkout_data['em'] ) ) {
-				// We only have the hash! Oh wait, we need the raw email for recovery.
-				// Let's get it from the customer object.
+			$email = WC()->session->get( 'mpc_guest_email_raw', '' );
+			if ( empty( $email ) ) {
 				$customer = WC()->customer;
 				if ( $customer && $customer->get_billing_email() ) {
 					$email = $customer->get_billing_email();
@@ -119,9 +117,34 @@ class AbandonedCart {
 		foreach ( $carts as $cart ) {
 			$recovery_url = add_query_arg( [ 'mpc_recover' => $cart->session_id ], wc_get_checkout_url() );
 			
-			$body = "<html><body>";
-			$body .= "<p>" . esc_html( $message_tmpl ) . "</p>";
-			$body .= "<p><a href='" . esc_url( $recovery_url ) . "' style='padding: 10px 20px; background: #007bff; color: #fff; text-decoration: none; border-radius: 5px;'>Complete Your Order</a></p>";
+			$cart_items_html = '<table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">';
+			$contents = json_decode( $cart->cart_contents, true );
+			if ( is_array( $contents ) ) {
+				foreach ( $contents as $item ) {
+					$product = wc_get_product( $item['variation_id'] ?: $item['product_id'] );
+					if ( ! $product ) continue;
+					
+					$image = $product->get_image( [ 64, 64 ], [ 'style' => 'border-radius: 5px; vertical-align: middle;' ] );
+					$name = $product->get_name();
+					$price = wc_price( $product->get_price() );
+					$qty = $item['quantity'];
+
+					$cart_items_html .= '<tr>';
+					$cart_items_html .= '<td style="padding: 10px; border-bottom: 1px solid #eee; width: 80px;">' . $image . '</td>';
+					$cart_items_html .= '<td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>' . esc_html( $name ) . '</strong><br>Qty: ' . (int) $qty . '</td>';
+					$cart_items_html .= '<td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">' . $price . '</td>';
+					$cart_items_html .= '</tr>';
+				}
+			}
+			$cart_items_html .= '</table>';
+
+			$body = "<html><body style='font-family: sans-serif; color: #333;'>";
+			$body .= "<div style='max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;'>";
+			$body .= "<h2 style='text-align: center; color: #000;'>" . esc_html( $subject ) . "</h2>";
+			$body .= "<p style='text-align: center;'>" . esc_html( $message_tmpl ) . "</p>";
+			$body .= $cart_items_html;
+			$body .= "<p style='text-align: center; margin-top: 30px;'><a href='" . esc_url( $recovery_url ) . "' style='padding: 12px 24px; background: #007bff; color: #fff; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;'>Complete Your Order</a></p>";
+			$body .= "</div>";
 			$body .= "</body></html>";
 			
 			$headers = array('Content-Type: text/html; charset=UTF-8');

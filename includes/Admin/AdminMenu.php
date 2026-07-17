@@ -17,6 +17,7 @@ class AdminMenu {
 		add_action( 'wp_ajax_mpc_save_settings', [ $this, 'ajax_save_settings' ] );
 		add_action( 'wp_ajax_mpc_retry_queue', [ $this, 'ajax_retry_queue' ] );
 		add_action( 'wp_ajax_mpc_clear_logs', [ $this, 'ajax_clear_logs' ] );
+		add_action( 'wp_ajax_mpc_test_token', [ $this, 'ajax_test_token' ] );
 	}
 
 	public function register_menus() {
@@ -92,5 +93,38 @@ class AdminMenu {
 		global $wpdb;
 		$wpdb->query( "TRUNCATE TABLE {$wpdb->prefix}mpc_event_logs" );
 		wp_send_json_success( ['message' => 'All event logs cleared.'] );
+	}
+
+	public function ajax_test_token() {
+		if ( ! current_user_can('manage_options') ) wp_send_json_error();
+		check_ajax_referer( 'mpc_save_settings', 'mpc_nonce' );
+
+		$pixel_id = sanitize_text_field( $_POST['pixel_id'] ?? '' );
+		$token = sanitize_textarea_field( $_POST['token'] ?? '' );
+
+		if ( ! $pixel_id || ! $token ) {
+			wp_send_json_error( ['message' => 'Missing Pixel ID or Token.'] );
+		}
+
+		$url = "https://graph.facebook.com/v19.0/{$pixel_id}?access_token={$token}&fields=name,creation_time";
+		$response = wp_remote_get( $url, [ 'timeout' => 15 ] );
+
+		if ( is_wp_error( $response ) ) {
+			wp_send_json_error( ['message' => $response->get_error_message()] );
+		}
+
+		$code = wp_remote_retrieve_response_code( $response );
+		$body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		if ( $code === 200 && ! empty( $body['name'] ) ) {
+			$creation_time = !empty($body['creation_time']) ? gmdate('Y-m-d', strtotime($body['creation_time'])) : 'Unknown';
+			wp_send_json_success( [
+				'name' => esc_html( $body['name'] ),
+				'creation_time' => $creation_time
+			] );
+		} else {
+			$error_msg = $body['error']['message'] ?? 'Invalid response from Meta API.';
+			wp_send_json_error( ['message' => esc_html( $error_msg )] );
+		}
 	}
 }

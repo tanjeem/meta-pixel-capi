@@ -131,6 +131,8 @@
 						<label for="mpc_capi_token">Access Token</label>
 						<textarea id="mpc_capi_token" name="mpc_capi_token" rows="4" placeholder="EAAI..."><?php echo esc_textarea( get_option('mpc_capi_token') ); ?></textarea>
 						<small>Generate this in Meta Events Manager → Settings → Conversions API.</small>
+						<button type="button" class="mpc-btn mpc-btn-sm mpc-btn-outline" id="mpc-test-token" style="margin-top: 10px;">Test Token Connection</button>
+						<div id="mpc-token-test-result" style="margin-top: 10px; font-size: 0.85rem;"></div>
 					</div>
 					<div class="mpc-field">
 						<label for="mpc_test_code">Test Event Code</label>

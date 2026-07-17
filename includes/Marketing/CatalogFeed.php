@@ -32,10 +32,13 @@ class CatalogFeed {
 		echo '<title>' . get_bloginfo_rss('name') . ' Facebook Catalog</title>' . "\n";
 		echo '<link>' . get_bloginfo_rss('url') . '</link>' . "\n";
 
+		$page = isset( $_GET['paged'] ) ? max( 1, intval( $_GET['paged'] ) ) : 1;
+		$limit = 500;
 		$args = array(
 			'post_type'      => 'product',
 			'post_status'    => 'publish',
-			'posts_per_page' => -1,
+			'posts_per_page' => $limit,
+			'paged'          => $page,
 		);
 
 		$products = get_posts( $args );

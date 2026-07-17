@@ -61,6 +61,39 @@ jQuery(document).ready(function($) {
 		});
 	});
 
+	// ── Token Test ──
+	$('#mpc-test-token').on('click', function() {
+		var $btn = $(this);
+		var $res = $('#mpc-token-test-result');
+		var token = $('#mpc_capi_token').val();
+		var pixel_id = $('#mpc_pixel_id').val();
+		
+		if (!token || !pixel_id) {
+			$res.css('color', '#ef4444').text('✗ Please enter both Pixel ID and Access Token first.');
+			return;
+		}
+
+		$btn.text('Testing...').prop('disabled', true);
+		$res.text('').css('color', '');
+
+		$.post(ajaxurl, {
+			action: 'mpc_test_token',
+			mpc_nonce: $('#mpc-settings-form input[name="mpc_nonce"]').val(),
+			pixel_id: pixel_id,
+			token: token
+		}, function(res) {
+			$btn.text('Test Token Connection').prop('disabled', false);
+			if (res.success) {
+				$res.css('color', '#22c55e').html('✓ <strong>Success:</strong> Connected to pixel "' + res.data.name + '" (Created: ' + res.data.creation_time + ')');
+			} else {
+				$res.css('color', '#ef4444').html('✗ <strong>Error:</strong> ' + res.data.message);
+			}
+		}).fail(function() {
+			$btn.text('Test Token Connection').prop('disabled', false);
+			$res.css('color', '#ef4444').text('✗ Network error.');
+		});
+	});
+
 	// ── Clear Logs ──
 	$('#mpc-clear-logs').on('click', function() {
 		if (!confirm('Are you sure you want to delete all event logs?')) return;

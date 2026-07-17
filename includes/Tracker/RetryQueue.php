@@ -52,5 +52,8 @@ class RetryQueue {
 				$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->prefix}mpc_retry_queue SET attempts = attempts + 1 WHERE id = %d", $item->id ) );
 			}
 		}
+
+		// Auto-purge successful items and items older than 7 days
+		$wpdb->query( "DELETE FROM {$wpdb->prefix}mpc_retry_queue WHERE status = 'success' OR created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)" );
 	}
 }
