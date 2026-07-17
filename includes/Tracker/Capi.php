@@ -567,7 +567,11 @@ class Capi {
 		$pixel_id = get_option( 'mpc_pixel_id' );
 		if ( ! $token || ! $pixel_id ) return;
 
+		// Pre-log with status=pending immediately
+		$log_id = $this->log_event_pending( $event_name, $event_id, $custom_data, $user_data );
+
 		$this->event_queue[] = [
+			'log_id'           => $log_id,
 			'event_name'       => $event_name,
 			'event_time'       => time(),
 			'action_source'    => 'website',
@@ -576,9 +580,6 @@ class Capi {
 			'user_data'        => $user_data,
 			'custom_data'      => $custom_data,
 		];
-
-		// Pre-log with status=pending immediately (so logs show even if async fails)
-		$this->log_event_pending( $event_name, $event_id, $custom_data, $user_data );
 
 		if ( ! $this->shutdown_registered ) {
 			add_action( 'shutdown', [ $this, 'flush_event_queue' ] );
@@ -602,11 +603,20 @@ class Capi {
 		$pixel_id = get_option( 'mpc_pixel_id' );
 		if ( ! $token || ! $pixel_id ) return;
 
-		// Chunk at 50 events per request (well within FB's 1000 limit, safer for timeout)
 		$chunks = array_chunk( $this->event_queue, 50 );
+		global $wpdb;
 
 		foreach ( $chunks as $chunk ) {
-			$payload = [ 'data' => $chunk ];
+			$log_ids = [];
+			$api_data = [];
+
+			foreach ( $chunk as $ev ) {
+				if ( ! empty( $ev['log_id'] ) ) $log_ids[] = (int) $ev['log_id'];
+				unset( $ev['log_id'] );
+				$api_data[] = $ev;
+			}
+
+			$payload = [ 'data' => $api_data ];
 
 			$test_code = get_option( 'mpc_test_code' );
 			if ( $test_code ) {
@@ -615,12 +625,24 @@ class Capi {
 
 			$url = "https://graph.facebook.com/v19.0/{$pixel_id}/events?access_token={$token}";
 
-			wp_remote_post( $url, [
+			$response = wp_remote_post( $url, [
 				'body'     => wp_json_encode( $payload ),
 				'headers'  => [ 'Content-Type' => 'application/json' ],
-				'timeout'  => 10,
-				'blocking' => false, // Fire-and-forget — never freezes the page.
+				'timeout'  => 5,
+				'blocking' => true,
 			] );
+
+			if ( ! empty( $log_ids ) ) {
+				$ids_str = implode( ',', $log_ids );
+				if ( is_wp_error( $response ) ) {
+					$status = 500;
+					$body = $response->get_error_message();
+				} else {
+					$status = wp_remote_retrieve_response_code( $response );
+					$body = wp_remote_retrieve_body( $response );
+				}
+				$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->prefix}mpc_event_logs SET status = %d, response = %s WHERE id IN ($ids_str)", $status, $body ) );
+			}
 		}
 
 		$this->event_queue = [];
@@ -655,10 +677,11 @@ class Capi {
 				'event_id'   => $event_id,
 				'event_type' => 'server',
 				'payload'    => wp_json_encode( $payload ),
-				'status'     => 200, // Assume success; non-blocking can't verify
-				'response'   => 'queued (batch, non-blocking)',
+				'status'     => 0, 
+				'response'   => 'queued (batch)',
 			]
 		);
+		return $wpdb->insert_id;
 	}
 
 	/** Called by AdminMenu AJAX to manually retry. */
