@@ -13,6 +13,25 @@ jQuery(document).ready(function($) {
 		}
 	});
 
+	// ── Log filtering by platform ──
+	var mpcLogFilter = 'all';
+	function mpc_apply_log_filter() {
+		$('#mpc-log-body tr').each(function() {
+			var t = $(this).data('type');
+			if (mpcLogFilter === 'all' || t === undefined || t === mpcLogFilter) {
+				$(this).show();
+			} else {
+				$(this).hide();
+			}
+		});
+	}
+	$(document).on('click', '.mpc-filter-pill', function() {
+		$('.mpc-filter-pill').removeClass('active');
+		$(this).addClass('active');
+		mpcLogFilter = $(this).data('filter');
+		mpc_apply_log_filter();
+	});
+
 	// ── Auto-Refresh Event Logs ──
 	function mpc_fetch_logs() {
 		$.post(ajaxurl, {
@@ -21,6 +40,7 @@ jQuery(document).ready(function($) {
 		}, function(res) {
 			if (res.success && res.data.html) {
 				$('#mpc-log-body').html(res.data.html);
+				mpc_apply_log_filter();
 			}
 		});
 	}
@@ -79,7 +99,10 @@ jQuery(document).ready(function($) {
 	$('#mpc-retry-now').on('click', function() {
 		var $msg = $('#mpc-debug-msg');
 		$(this).text('Retrying...').prop('disabled', true);
-		$.post(ajaxurl, { action: 'mpc_retry_queue' }, function(res) {
+		$.post(ajaxurl, {
+			action: 'mpc_retry_queue',
+			mpc_nonce: $('#mpc-settings-form input[name="mpc_nonce"]').val()
+		}, function(res) {
 			$msg.text(res.data ? res.data.message : 'Done!');
 			$('#mpc-retry-now').text('Retry Failed Events').prop('disabled', false);
 		});
@@ -123,7 +146,10 @@ jQuery(document).ready(function($) {
 		if (!confirm('Are you sure you want to delete all event logs?')) return;
 		var $msg = $('#mpc-debug-msg');
 		$(this).text('Clearing...').prop('disabled', true);
-		$.post(ajaxurl, { action: 'mpc_clear_logs' }, function(res) {
+		$.post(ajaxurl, {
+			action: 'mpc_clear_logs',
+			mpc_nonce: $('#mpc-settings-form input[name="mpc_nonce"]').val()
+		}, function(res) {
 			$msg.text(res.data ? res.data.message : 'Logs cleared!');
 			$('#mpc-log-body').html('<tr><td colspan="5" style="text-align:center; color: #64748b; padding: 30px;">Logs cleared.</td></tr>');
 			$('#mpc-clear-logs').text('Clear All Logs').prop('disabled', false);

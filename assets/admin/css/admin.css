@@ -435,3 +435,140 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 .mpc-wrap .notice { display: none; }
 .mpc-wrap #wpfooter { display: none; }
 #wpadminbar + #wpbody .mpc-wrap { margin-top: 10px; }
+
+/* ═══════════════════════════════════════════════════════════
+   PHASE 4 — Overview dashboard components
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Hero overview: health score + summary ── */
+.mpc-overview {
+	display: grid;
+	grid-template-columns: 260px 1fr;
+	gap: 24px;
+	margin-bottom: 24px;
+}
+@media (max-width: 860px) { .mpc-overview { grid-template-columns: 1fr; } }
+
+.mpc-health {
+	background: var(--mpc-surface);
+	border: 1px solid var(--mpc-border);
+	border-radius: var(--mpc-radius-lg);
+	box-shadow: var(--mpc-shadow-card);
+	padding: 28px 24px;
+	text-align: center;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+.mpc-ring {
+	--val: 0;
+	width: 140px; height: 140px;
+	border-radius: 50%;
+	display: grid;
+	place-items: center;
+	background:
+		radial-gradient(closest-side, var(--mpc-surface) 78%, transparent 79% 100%),
+		conic-gradient(var(--mpc-score-color, var(--mpc-success-text)) calc(var(--val) * 1%), var(--mpc-border) 0);
+	margin-bottom: 16px;
+}
+.mpc-ring-inner { text-align: center; }
+.mpc-ring-inner b {
+	font-family: var(--mpc-font-display);
+	font-size: 2rem;
+	font-weight: 800;
+	color: var(--mpc-primary);
+	line-height: 1;
+}
+.mpc-ring-inner span { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; color: var(--mpc-text-dim); margin-top: 4px; }
+.mpc-health h3 { margin: 0 0 4px; font-family: var(--mpc-font-display); font-size: 1.05rem; color: var(--mpc-primary); }
+.mpc-health p { margin: 0; font-size: .82rem; color: var(--mpc-text-muted); }
+
+/* ── Setup checklist ── */
+.mpc-checklist { list-style: none; margin: 0; padding: 0; }
+.mpc-check-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 12px 0;
+	border-bottom: 1px solid var(--mpc-border);
+}
+.mpc-check-item:last-child { border-bottom: none; }
+.mpc-check-mark {
+	flex-shrink: 0;
+	width: 22px; height: 22px;
+	border-radius: 50%;
+	display: grid; place-items: center;
+	font-size: 13px; font-weight: 700;
+}
+.mpc-check-mark.done { background: var(--mpc-success-bg); color: var(--mpc-success-text); }
+.mpc-check-mark.todo { background: var(--mpc-warning-bg); color: var(--mpc-warning-text); }
+.mpc-check-body { flex: 1; }
+.mpc-check-body strong { display: block; font-size: .9rem; color: var(--mpc-text); font-weight: 600; }
+.mpc-check-body small { display: block; font-size: .8rem; color: var(--mpc-text-muted); margin-top: 2px; }
+
+/* ── Channel status grid ── */
+.mpc-channel-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+	gap: 12px;
+}
+.mpc-channel {
+	border: 1px solid var(--mpc-border);
+	border-radius: var(--mpc-radius);
+	padding: 16px;
+	background: var(--mpc-bg);
+	transition: border-color .25s, transform .25s;
+}
+.mpc-channel:hover { border-color: var(--mpc-border-hover); transform: translateY(-2px); }
+.mpc-channel.on { background: var(--mpc-surface); border-color: rgba(5,150,105,0.35); }
+.mpc-channel-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.mpc-channel-name { font-weight: 700; font-size: .92rem; color: var(--mpc-primary); font-family: var(--mpc-font-display); }
+.mpc-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--mpc-border-hover); }
+.mpc-dot.live { background: var(--mpc-success-text); box-shadow: 0 0 0 3px var(--mpc-success-bg); }
+.mpc-channel-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+.mpc-tag { font-size: .68rem; font-weight: 600; padding: 2px 7px; border-radius: 5px; background: var(--mpc-bg); color: var(--mpc-text-dim); border: 1px solid var(--mpc-border); }
+.mpc-tag.active { background: var(--mpc-info-bg); color: var(--mpc-info-text); border-color: rgba(37,99,235,0.2); }
+
+/* ── Section label ── */
+.mpc-section-label {
+	font-family: var(--mpc-font-display);
+	font-size: .8rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: .06em;
+	color: var(--mpc-text-dim);
+	margin: 4px 0 14px;
+}
+
+/* ── Radio group (consent provider) ── */
+.mpc-radio-group { display: flex; flex-direction: column; gap: 10px; }
+.mpc-radio {
+	display: flex; align-items: flex-start; gap: 12px;
+	padding: 14px 16px;
+	border: 1px solid var(--mpc-border);
+	border-radius: var(--mpc-radius);
+	background: var(--mpc-bg);
+	cursor: pointer;
+	transition: border-color .2s, background .2s;
+}
+.mpc-radio:hover { border-color: var(--mpc-border-hover); background: var(--mpc-surface); }
+.mpc-radio input { margin-top: 3px; }
+.mpc-radio-text strong { display: block; font-size: .9rem; color: var(--mpc-text); font-weight: 600; }
+.mpc-radio-text small { display: block; font-size: .8rem; color: var(--mpc-text-muted); margin-top: 2px; }
+
+/* ── Log filter pills ── */
+.mpc-log-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+.mpc-filter-pill {
+	border: 1px solid var(--mpc-border);
+	background: var(--mpc-surface);
+	color: var(--mpc-text-muted);
+	padding: 6px 14px;
+	border-radius: 999px;
+	font-size: .8rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all .2s;
+}
+.mpc-filter-pill:hover { border-color: var(--mpc-border-hover); color: var(--mpc-text); }
+.mpc-filter-pill.active { background: var(--mpc-primary); color: #fff; border-color: var(--mpc-primary); }

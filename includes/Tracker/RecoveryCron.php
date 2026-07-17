@@ -21,32 +21,27 @@ class RecoveryCron {
 
 	public function run_recovery() {
 		if ( ! get_option( 'mpc_enable_acr', 1 ) ) return;
+		if ( ! function_exists( 'wc_get_orders' ) ) return;
 
-		global $wpdb;
-		
-		$query = $wpdb->prepare(
-			"SELECT ID FROM {$wpdb->posts}
-			 WHERE post_type = 'shop_order'
-			 AND post_status IN ('wc-processing', 'wc-completed')
-			 AND post_date >= %s
-			 AND post_date <= %s",
-			date( 'Y-m-d H:i:s', strtotime( '-24 hours' ) ),
-			date( 'Y-m-d H:i:s' )
-		);
-		
-		$orders = $wpdb->get_col( $query );
+		// HPOS-safe: pull recent paid orders via the CRUD layer instead of raw wp_posts SQL.
+		$orders = wc_get_orders( [
+			'status'       => [ 'wc-processing', 'wc-completed' ],
+			'date_created' => '>' . ( time() - DAY_IN_SECONDS ),
+			'limit'        => 200,
+			'return'       => 'objects',
+		] );
 
 		if ( empty( $orders ) ) return;
 
 		$capi = Capi::get_instance();
 
-		foreach ( $orders as $order_id ) {
-			$sent = get_post_meta( $order_id, '_mpc_capi_sent', true );
-			
-			if ( ! $sent ) {
-				delete_post_meta( $order_id, '_mpc_purchase_tracked' );
-				$capi->send_purchase_event_server_only( $order_id );
-			}
+		foreach ( $orders as $order ) {
+			if ( $order->get_meta( '_mpc_capi_sent' ) ) continue;
+
+			// Clear the dedup flag so the purchase can be re-sent, then dispatch server-side.
+			$order->delete_meta_data( '_mpc_purchase_tracked' );
+			$order->save();
+			$capi->send_purchase_event_server_only( $order->get_id() );
 		}
 	}
 }

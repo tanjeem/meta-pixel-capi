@@ -52,19 +52,23 @@ class AbandonedCart {
 		
 		$existing = $wpdb->get_row( $wpdb->prepare( "SELECT id, status FROM {$wpdb->prefix}mpc_abandoned_carts WHERE session_id = %s", $session_id ) );
 		
+		// Store timestamps in UTC (GMT) so the recovery scan window matches regardless
+		// of the site or database server timezone. See scan_and_send().
+		$now_utc = current_time( 'mysql', true );
+
 		if ( $existing ) {
 			if ( $existing->status === 'recovered' ) {
 				// If they are building a new cart after a previous purchase, reset to pending
-				$wpdb->update( 
-					"{$wpdb->prefix}mpc_abandoned_carts", 
-					[ 'cart_contents' => $cart_contents, 'status' => 'pending', 'last_active' => current_time('mysql') ], 
-					[ 'id' => $existing->id ] 
+				$wpdb->update(
+					"{$wpdb->prefix}mpc_abandoned_carts",
+					[ 'cart_contents' => $cart_contents, 'status' => 'pending', 'last_active' => $now_utc ],
+					[ 'id' => $existing->id ]
 				);
 			} else {
-				$wpdb->update( 
-					"{$wpdb->prefix}mpc_abandoned_carts", 
-					[ 'cart_contents' => $cart_contents, 'last_active' => current_time('mysql') ], 
-					[ 'id' => $existing->id ] 
+				$wpdb->update(
+					"{$wpdb->prefix}mpc_abandoned_carts",
+					[ 'cart_contents' => $cart_contents, 'last_active' => $now_utc ],
+					[ 'id' => $existing->id ]
 				);
 			}
 		} else {
@@ -75,7 +79,7 @@ class AbandonedCart {
 					'email' => $email,
 					'cart_contents' => $cart_contents,
 					'status' => 'pending',
-					'last_active' => current_time('mysql')
+					'last_active' => $now_utc
 				]
 			);
 		}
@@ -103,10 +107,10 @@ class AbandonedCart {
 		global $wpdb;
 		// Find carts pending for more than 1 hour (but less than 24h to avoid old spam)
 		$carts = $wpdb->get_results( "
-			SELECT * FROM {$wpdb->prefix}mpc_abandoned_carts 
-			WHERE status = 'pending' 
-			AND last_active < DATE_SUB(NOW(), INTERVAL 1 HOUR)
-			AND last_active > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+			SELECT * FROM {$wpdb->prefix}mpc_abandoned_carts
+			WHERE status = 'pending'
+			AND last_active < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR)
+			AND last_active > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
 		" );
 
 		if ( empty( $carts ) ) return;

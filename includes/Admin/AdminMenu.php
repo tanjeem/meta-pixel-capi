@@ -81,17 +81,53 @@ class AdminMenu {
 		update_option( 'mpc_blocked_phones', sanitize_textarea_field( $_POST['mpc_blocked_phones'] ?? '' ) );
 		update_option( 'mpc_blocked_emails', sanitize_textarea_field( $_POST['mpc_blocked_emails'] ?? '' ) );
 
+		// ── Integrations: Google Analytics 4 ──
+		update_option( 'mpc_ga4_enabled', isset( $_POST['mpc_ga4_enabled'] ) ? 1 : 0 );
+		update_option( 'mpc_ga4_measurement_id', sanitize_text_field( $_POST['mpc_ga4_measurement_id'] ?? '' ) );
+		update_option( 'mpc_ga4_api_secret', sanitize_text_field( $_POST['mpc_ga4_api_secret'] ?? '' ) );
+
+		// ── Integrations: Google Ads ──
+		update_option( 'mpc_google_ads_enabled', isset( $_POST['mpc_google_ads_enabled'] ) ? 1 : 0 );
+		update_option( 'mpc_google_ads_conversion_id', sanitize_text_field( $_POST['mpc_google_ads_conversion_id'] ?? '' ) );
+		update_option( 'mpc_google_ads_purchase_label', sanitize_text_field( $_POST['mpc_google_ads_purchase_label'] ?? '' ) );
+
+		// ── Integrations: TikTok ──
+		update_option( 'mpc_tiktok_enabled', isset( $_POST['mpc_tiktok_enabled'] ) ? 1 : 0 );
+		update_option( 'mpc_tiktok_pixel_code', sanitize_text_field( $_POST['mpc_tiktok_pixel_code'] ?? '' ) );
+		update_option( 'mpc_tiktok_access_token', sanitize_text_field( $_POST['mpc_tiktok_access_token'] ?? '' ) );
+
+		// ── Integrations: Pinterest ──
+		update_option( 'mpc_pinterest_enabled', isset( $_POST['mpc_pinterest_enabled'] ) ? 1 : 0 );
+		update_option( 'mpc_pinterest_tag_id', sanitize_text_field( $_POST['mpc_pinterest_tag_id'] ?? '' ) );
+		update_option( 'mpc_pinterest_ad_account_id', sanitize_text_field( $_POST['mpc_pinterest_ad_account_id'] ?? '' ) );
+		update_option( 'mpc_pinterest_access_token', sanitize_text_field( $_POST['mpc_pinterest_access_token'] ?? '' ) );
+
+		// ── Integrations: Snapchat ──
+		update_option( 'mpc_snapchat_enabled', isset( $_POST['mpc_snapchat_enabled'] ) ? 1 : 0 );
+		update_option( 'mpc_snapchat_pixel_id', sanitize_text_field( $_POST['mpc_snapchat_pixel_id'] ?? '' ) );
+		update_option( 'mpc_snapchat_access_token', sanitize_text_field( $_POST['mpc_snapchat_access_token'] ?? '' ) );
+
+		// ── Consent & Privacy ──
+		update_option( 'mpc_consent_required', isset( $_POST['mpc_consent_required'] ) ? 1 : 0 );
+		update_option( 'mpc_consent_mode_v2', isset( $_POST['mpc_consent_mode_v2'] ) ? 1 : 0 );
+		$provider = sanitize_text_field( $_POST['mpc_consent_provider'] ?? 'none' );
+		update_option( 'mpc_consent_provider', in_array( $provider, [ 'none', 'wp_consent_api', 'cookie' ], true ) ? $provider : 'none' );
+		update_option( 'mpc_consent_cookie_name', sanitize_text_field( $_POST['mpc_consent_cookie_name'] ?? '' ) );
+		update_option( 'mpc_consent_cookie_value', sanitize_text_field( $_POST['mpc_consent_cookie_value'] ?? '' ) );
+
 		wp_send_json_success( ['message' => 'Settings saved successfully!'] );
 	}
 
 	public function ajax_retry_queue() {
 		if ( ! current_user_can('manage_options') ) wp_send_json_error();
+		check_ajax_referer( 'mpc_save_settings', 'mpc_nonce' );
 		\Mpc\Tracker\RetryQueue::get_instance()->process_queue();
 		wp_send_json_success( ['message' => 'Retry queue processed.'] );
 	}
 
 	public function ajax_clear_logs() {
 		if ( ! current_user_can('manage_options') ) wp_send_json_error();
+		check_ajax_referer( 'mpc_save_settings', 'mpc_nonce' );
 		global $wpdb;
 		$wpdb->query( "TRUNCATE TABLE {$wpdb->prefix}mpc_event_logs" );
 		wp_send_json_success( ['message' => 'All event logs cleared.'] );
@@ -108,7 +144,7 @@ class AdminMenu {
 			wp_send_json_error( ['message' => 'Missing Pixel ID or Token.'] );
 		}
 
-		$url = "https://graph.facebook.com/v19.0/{$pixel_id}?access_token={$token}&fields=name,creation_time";
+		$url = "https://graph.facebook.com/" . MPC_GRAPH_VERSION . "/{$pixel_id}?access_token={$token}&fields=name,creation_time";
 		$response = wp_remote_get( $url, [ 'timeout' => 15 ] );
 
 		if ( is_wp_error( $response ) ) {
@@ -142,6 +178,7 @@ class AdminMenu {
 
 	public function ajax_fetch_logs_html() {
 		if ( ! current_user_can('manage_options') ) wp_send_json_error();
+		check_ajax_referer( 'mpc_save_settings', 'mpc_nonce' );
 
 		global $wpdb;
 		$logs = $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}mpc_event_logs ORDER BY id DESC LIMIT 50" );
@@ -150,24 +187,28 @@ class AdminMenu {
 		if ( empty($logs) ) : ?>
 			<tr><td colspan="6" style="text-align:center; color: var(--mpc-text-dim); padding: 30px;">No events logged yet. Events will appear here once your Pixel ID and CAPI Token are configured.</td></tr>
 		<?php else :
+			$type_labels = [ 'server' => 'Meta', 'ga4' => 'GA4', 'google_ads' => 'Google Ads', 'tiktok' => 'TikTok', 'pinterest' => 'Pinterest', 'snapchat' => 'Snapchat' ];
 			foreach ( $logs as $log ) :
-				$payload = json_decode( $log->response, true );
 				$user_data_raw = json_decode( $log->payload ?? '{}', true );
 				$ud = $user_data_raw['data'][0]['user_data'] ?? [];
 				$fields = ['em'=>'Email','ph'=>'Phone','fn'=>'First Name','ln'=>'Last Name','ct'=>'City','st'=>'State','zp'=>'ZIP','country'=>'Country','fbp'=>'FBP','fbc'=>'FBC','external_id'=>'ExtID'];
+				$type = $log->event_type;
+				$type_label = $type_labels[ $type ] ?? ucfirst( (string) $type );
+				$is_ok = ( (int) $log->status >= 200 && (int) $log->status < 300 );
 		?>
-		<tr>
+		<tr data-type="<?php echo esc_attr( $type ); ?>">
 			<td><strong><?php echo esc_html($log->event_name); ?></strong></td>
 			<td style="font-size:.75rem; color: var(--mpc-text-dim); word-break: break-all; min-width:180px;"><?php echo esc_html( $log->event_id ); ?></td>
-			<td><span class="mpc-badge mpc-badge-info">Server</span></td>
+			<td><span class="mpc-badge mpc-badge-info"><?php echo esc_html( $type_label ); ?></span></td>
 			<td>
-				<?php if ( $log->status == 200 ) : ?>
-					<span class="mpc-badge mpc-badge-ok">200 OK</span>
+				<?php if ( $is_ok ) : ?>
+					<span class="mpc-badge mpc-badge-ok"><?php echo esc_html( $log->status ); ?> OK</span>
 				<?php else : ?>
 					<span class="mpc-badge mpc-badge-danger"><?php echo esc_html($log->status); ?></span>
 				<?php endif; ?>
 			</td>
 			<td>
+				<?php if ( $type === 'server' ) : ?>
 				<div class="mpc-chip-row">
 					<?php foreach ( $fields as $key => $label ) :
 						if ( ! empty( $ud[$key] ) ) : ?>
@@ -177,6 +218,9 @@ class AdminMenu {
 						<?php endif;
 					endforeach; ?>
 				</div>
+				<?php else : ?>
+					<span style="font-size:.78rem; color: var(--mpc-text-dim);">—</span>
+				<?php endif; ?>
 			</td>
 			<td style="font-size: .8rem; color: var(--mpc-text-dim); white-space: nowrap;"><?php echo esc_html($log->created_at); ?></td>
 		</tr>

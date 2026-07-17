@@ -13,6 +13,8 @@
 			<button type="button" class="mpc-tab-btn" data-tab="pixel">Pixel Settings</button>
 			<button type="button" class="mpc-tab-btn" data-tab="capi">CAPI Settings</button>
 			<button type="button" class="mpc-tab-btn" data-tab="events">Event Controls</button>
+			<button type="button" class="mpc-tab-btn" data-tab="integrations">Integrations</button>
+			<button type="button" class="mpc-tab-btn" data-tab="consent">Consent & Privacy</button>
 			<button type="button" class="mpc-tab-btn" data-tab="woo">WooCommerce Rules</button>
 			<button type="button" class="mpc-tab-btn" data-tab="debug">Test & Debug</button>
 			<button type="button" class="mpc-tab-btn" data-tab="logs">Event Logs</button>
@@ -22,29 +24,89 @@
 		<!-- TAB 1: DASHBOARD -->
 		<!-- ═══════════════════════════════════════════ -->
 		<div class="mpc-tab-panel active" data-panel="dashboard">
+			<?php
+			// ── Compute setup health + channel status ──
+			$pixel_set   = (bool) get_option( 'mpc_pixel_id' );
+			$capi_set    = (bool) get_option( 'mpc_capi_token' );
+			$purchase_on = (bool) get_option( 'mpc_ev_purchase', 1 );
+
+			$channels_status = [
+				[ 'name' => 'Meta',       'on' => $pixel_set,                                                                'browser' => $pixel_set, 'server' => $capi_set ],
+				[ 'name' => 'GA4',        'on' => get_option('mpc_ga4_enabled') && get_option('mpc_ga4_measurement_id'),      'browser' => true, 'server' => (bool) get_option('mpc_ga4_api_secret') ],
+				[ 'name' => 'Google Ads', 'on' => get_option('mpc_google_ads_enabled') && get_option('mpc_google_ads_conversion_id'), 'browser' => true, 'server' => false ],
+				[ 'name' => 'TikTok',     'on' => get_option('mpc_tiktok_enabled') && get_option('mpc_tiktok_pixel_code'),     'browser' => true, 'server' => (bool) get_option('mpc_tiktok_access_token') ],
+				[ 'name' => 'Pinterest',  'on' => get_option('mpc_pinterest_enabled') && get_option('mpc_pinterest_tag_id'),   'browser' => true, 'server' => (bool) ( get_option('mpc_pinterest_ad_account_id') && get_option('mpc_pinterest_access_token') ) ],
+				[ 'name' => 'Snapchat',   'on' => get_option('mpc_snapchat_enabled') && get_option('mpc_snapchat_pixel_id'),   'browser' => true, 'server' => (bool) get_option('mpc_snapchat_access_token') ],
+			];
+			$active_platforms = count( array_filter( $channels_status, function ( $c ) { return $c['on']; } ) );
+
+			$checks = [
+				[ 'done' => $pixel_set,             'title' => 'Meta Pixel ID configured',        'desc' => 'The foundation for all Meta browser tracking.' ],
+				[ 'done' => $capi_set,              'title' => 'Meta Conversions API connected',  'desc' => 'Server-side tracking that beats ad blockers & iOS.' ],
+				[ 'done' => $purchase_on,           'title' => 'Purchase event enabled',           'desc' => 'Your most important conversion signal.' ],
+				[ 'done' => $active_platforms > 1,  'title' => 'Additional platform connected',    'desc' => 'GA4, Google Ads, TikTok, Pinterest or Snapchat.' ],
+			];
+			$done  = count( array_filter( $checks, function ( $c ) { return $c['done']; } ) );
+			$score = (int) round( $done / count( $checks ) * 100 );
+			$score_color = $score >= 75 ? 'var(--mpc-success-text)' : ( $score >= 40 ? 'var(--mpc-warning-text)' : 'var(--mpc-danger-text)' );
+			?>
+
+			<div class="mpc-overview">
+				<div class="mpc-health">
+					<div class="mpc-ring" style="--val: <?php echo esc_attr( $score ); ?>; --mpc-score-color: <?php echo esc_attr( $score_color ); ?>;">
+						<div class="mpc-ring-inner">
+							<b><?php echo esc_html( $score ); ?>%</b>
+							<span>Setup</span>
+						</div>
+					</div>
+					<h3>Tracking Health</h3>
+					<p><?php echo esc_html( $active_platforms ); ?> platform<?php echo $active_platforms === 1 ? '' : 's'; ?> active</p>
+				</div>
+
+				<div class="mpc-card" style="margin-bottom:0;">
+					<div class="mpc-card-head">
+						<span class="dashicons dashicons-yes-alt"></span>
+						<h3>Setup Checklist</h3>
+					</div>
+					<div class="mpc-card-body">
+						<ul class="mpc-checklist">
+							<?php foreach ( $checks as $c ) : ?>
+							<li class="mpc-check-item">
+								<span class="mpc-check-mark <?php echo $c['done'] ? 'done' : 'todo'; ?>"><?php echo $c['done'] ? '✓' : '!'; ?></span>
+								<span class="mpc-check-body">
+									<strong><?php echo esc_html( $c['title'] ); ?></strong>
+									<small><?php echo esc_html( $c['desc'] ); ?></small>
+								</span>
+							</li>
+							<?php endforeach; ?>
+						</ul>
+					</div>
+				</div>
+			</div>
+
 			<div class="mpc-card">
 				<div class="mpc-card-head">
-					<span class="dashicons dashicons-dashboard"></span>
-					<h3>System Overview</h3>
+					<span class="dashicons dashicons-networking"></span>
+					<h3>Platform Status</h3>
 				</div>
 				<div class="mpc-card-body">
-					<div class="mpc-status-grid">
-						<div class="mpc-status-item">
-							<div class="label">Pixel Status</div>
-							<div class="value"><?php echo get_option('mpc_pixel_id') ? '<span class="mpc-badge mpc-badge-ok">Active</span>' : '<span class="mpc-badge mpc-badge-warn">Not Set</span>'; ?></div>
+					<div class="mpc-channel-grid">
+						<?php foreach ( $channels_status as $ch ) : ?>
+						<div class="mpc-channel <?php echo $ch['on'] ? 'on' : ''; ?>">
+							<div class="mpc-channel-top">
+								<span class="mpc-channel-name"><?php echo esc_html( $ch['name'] ); ?></span>
+								<span class="mpc-dot <?php echo $ch['on'] ? 'live' : ''; ?>"></span>
+							</div>
+							<div class="mpc-channel-meta">
+								<?php if ( $ch['on'] ) : ?>
+									<span class="mpc-tag <?php echo $ch['browser'] ? 'active' : ''; ?>">Browser</span>
+									<span class="mpc-tag <?php echo $ch['server'] ? 'active' : ''; ?>">Server</span>
+								<?php else : ?>
+									<span class="mpc-tag">Off</span>
+								<?php endif; ?>
+							</div>
 						</div>
-						<div class="mpc-status-item">
-							<div class="label">CAPI Status</div>
-							<div class="value"><?php echo get_option('mpc_capi_token') ? '<span class="mpc-badge mpc-badge-ok">Active</span>' : '<span class="mpc-badge mpc-badge-warn">Not Set</span>'; ?></div>
-						</div>
-						<div class="mpc-status-item">
-							<div class="label">Retry Queue</div>
-							<div class="value"><span class="mpc-badge mpc-badge-info">Hourly</span></div>
-						</div>
-						<div class="mpc-status-item">
-							<div class="label">Cart Recovery</div>
-							<div class="value"><?php echo get_option('mpc_enable_abandoned_cart') ? '<span class="mpc-badge mpc-badge-ok">Active</span>' : '<span class="mpc-badge mpc-badge-warn">Disabled</span>'; ?></div>
-						</div>
+						<?php endforeach; ?>
 					</div>
 				</div>
 			</div>
@@ -69,9 +131,9 @@
 						<h3>Quick Info</h3>
 					</div>
 					<div class="mpc-card-body">
-						<p style="color: var(--mpc-text-muted); margin: 0 0 8px; font-size: .85rem;">Plugin Version: <strong style="color:#fff;"><?php echo MPC_VERSION; ?></strong></p>
-						<p style="color: var(--mpc-text-muted); margin: 0 0 8px; font-size: .85rem;">Graph API: <strong style="color:#fff;">v19.0</strong></p>
-						<p style="color: var(--mpc-text-muted); margin: 0; font-size: .85rem;">Deduplication: <strong style="color: var(--mpc-success);">Active (MutationObserver)</strong></p>
+						<p style="color: var(--mpc-text-muted); margin: 0 0 8px; font-size: .85rem;">Plugin Version: <strong style="color: var(--mpc-text);"><?php echo esc_html( MPC_VERSION ); ?></strong></p>
+						<p style="color: var(--mpc-text-muted); margin: 0 0 8px; font-size: .85rem;">Graph API: <strong style="color: var(--mpc-text);"><?php echo esc_html( MPC_GRAPH_VERSION ); ?></strong></p>
+						<p style="color: var(--mpc-text-muted); margin: 0; font-size: .85rem;">Deduplication: <strong style="color: var(--mpc-success-text);">Active (MutationObserver)</strong></p>
 					</div>
 				</div>
 			</div>
@@ -188,6 +250,187 @@
 							<label class="mpc-toggle-track"><input type="checkbox" name="<?php echo $ev['name']; ?>" value="1" <?php checked(1, get_option($ev['name'], $ev['default'])); ?>><span class="mpc-toggle-slider"></span></label>
 						</div>
 						<?php endforeach; ?>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- ═══════════════════════════════════════════ -->
+		<!-- TAB: INTEGRATIONS (multi-platform channels) -->
+		<!-- ═══════════════════════════════════════════ -->
+		<div class="mpc-tab-panel" data-panel="integrations">
+			<div class="mpc-card">
+				<div class="mpc-card-head">
+					<span class="dashicons dashicons-chart-line"></span>
+					<h3>Google Analytics 4</h3>
+				</div>
+				<div class="mpc-card-body">
+					<div class="mpc-switch">
+						<div class="mpc-switch-label">Enable GA4 Tracking<small>Fires GA4 events in the browser (gtag) and server-side (Measurement Protocol).</small></div>
+						<label class="mpc-toggle-track"><input type="checkbox" name="mpc_ga4_enabled" value="1" <?php checked(1, get_option('mpc_ga4_enabled', 0)); ?>><span class="mpc-toggle-slider"></span></label>
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_ga4_measurement_id">Measurement ID</label>
+						<input type="text" id="mpc_ga4_measurement_id" name="mpc_ga4_measurement_id" value="<?php echo esc_attr( get_option('mpc_ga4_measurement_id') ); ?>" placeholder="G-XXXXXXXXXX" />
+						<small>Found in GA4 → Admin → Data Streams → your web stream.</small>
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_ga4_api_secret">Measurement Protocol API Secret <span style="opacity:.6;">(optional — enables server-side)</span></label>
+						<input type="text" id="mpc_ga4_api_secret" name="mpc_ga4_api_secret" value="<?php echo esc_attr( get_option('mpc_ga4_api_secret') ); ?>" placeholder="xxxxxxxx" />
+						<small>GA4 → Admin → Data Streams → Measurement Protocol API secrets. Leave blank to track browser-only.</small>
+					</div>
+				</div>
+			</div>
+
+			<div class="mpc-card">
+				<div class="mpc-card-head">
+					<span class="dashicons dashicons-money-alt"></span>
+					<h3>Google Ads</h3>
+				</div>
+				<div class="mpc-card-body">
+					<div class="mpc-switch">
+						<div class="mpc-switch-label">Enable Google Ads Conversion<small>Fires a Google Ads conversion on Purchase (browser).</small></div>
+						<label class="mpc-toggle-track"><input type="checkbox" name="mpc_google_ads_enabled" value="1" <?php checked(1, get_option('mpc_google_ads_enabled', 0)); ?>><span class="mpc-toggle-slider"></span></label>
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_google_ads_conversion_id">Conversion ID</label>
+						<input type="text" id="mpc_google_ads_conversion_id" name="mpc_google_ads_conversion_id" value="<?php echo esc_attr( get_option('mpc_google_ads_conversion_id') ); ?>" placeholder="AW-XXXXXXXXX" />
+						<small>Your Google Ads conversion account id (starts with AW-).</small>
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_google_ads_purchase_label">Purchase Conversion Label</label>
+						<input type="text" id="mpc_google_ads_purchase_label" name="mpc_google_ads_purchase_label" value="<?php echo esc_attr( get_option('mpc_google_ads_purchase_label') ); ?>" placeholder="abCdEfGhIj" />
+						<small>The label from your Purchase conversion action in Google Ads.</small>
+					</div>
+				</div>
+			</div>
+
+			<div class="mpc-card">
+				<div class="mpc-card-head">
+					<span class="dashicons dashicons-video-alt3"></span>
+					<h3>TikTok</h3>
+				</div>
+				<div class="mpc-card-body">
+					<div class="mpc-switch">
+						<div class="mpc-switch-label">Enable TikTok Tracking<small>TikTok Pixel (browser) + Events API (server-side).</small></div>
+						<label class="mpc-toggle-track"><input type="checkbox" name="mpc_tiktok_enabled" value="1" <?php checked(1, get_option('mpc_tiktok_enabled', 0)); ?>><span class="mpc-toggle-slider"></span></label>
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_tiktok_pixel_code">Pixel Code</label>
+						<input type="text" id="mpc_tiktok_pixel_code" name="mpc_tiktok_pixel_code" value="<?php echo esc_attr( get_option('mpc_tiktok_pixel_code') ); ?>" placeholder="e.g. CABCD1EFGH2IJK3LMN" />
+						<small>TikTok Events Manager → your pixel → Pixel Code.</small>
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_tiktok_access_token">Events API Access Token <span style="opacity:.6;">(optional — enables server-side)</span></label>
+						<input type="text" id="mpc_tiktok_access_token" name="mpc_tiktok_access_token" value="<?php echo esc_attr( get_option('mpc_tiktok_access_token') ); ?>" placeholder="TikTok Events API token" />
+						<small>Generate under Events API → Generate Access Token. Leave blank to track browser-only.</small>
+					</div>
+				</div>
+			</div>
+
+			<div class="mpc-card">
+				<div class="mpc-card-head">
+					<span class="dashicons dashicons-pinterest"></span>
+					<h3>Pinterest</h3>
+				</div>
+				<div class="mpc-card-body">
+					<div class="mpc-switch">
+						<div class="mpc-switch-label">Enable Pinterest Tracking<small>Pinterest Tag (browser) + Conversions API (server-side).</small></div>
+						<label class="mpc-toggle-track"><input type="checkbox" name="mpc_pinterest_enabled" value="1" <?php checked(1, get_option('mpc_pinterest_enabled', 0)); ?>><span class="mpc-toggle-slider"></span></label>
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_pinterest_tag_id">Tag ID</label>
+						<input type="text" id="mpc_pinterest_tag_id" name="mpc_pinterest_tag_id" value="<?php echo esc_attr( get_option('mpc_pinterest_tag_id') ); ?>" placeholder="e.g. 2612345678901" />
+						<small>Pinterest Ads → Conversions → Tag Manager.</small>
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_pinterest_ad_account_id">Ad Account ID <span style="opacity:.6;">(optional — for server-side)</span></label>
+						<input type="text" id="mpc_pinterest_ad_account_id" name="mpc_pinterest_ad_account_id" value="<?php echo esc_attr( get_option('mpc_pinterest_ad_account_id') ); ?>" placeholder="Ad account id" />
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_pinterest_access_token">Conversions API Token <span style="opacity:.6;">(optional)</span></label>
+						<input type="text" id="mpc_pinterest_access_token" name="mpc_pinterest_access_token" value="<?php echo esc_attr( get_option('mpc_pinterest_access_token') ); ?>" placeholder="Pinterest CAPI token" />
+						<small>Both Ad Account ID and Token are required for server-side events.</small>
+					</div>
+				</div>
+			</div>
+
+			<div class="mpc-card">
+				<div class="mpc-card-head">
+					<span class="dashicons dashicons-format-chat"></span>
+					<h3>Snapchat</h3>
+				</div>
+				<div class="mpc-card-body">
+					<div class="mpc-switch">
+						<div class="mpc-switch-label">Enable Snapchat Tracking<small>Snap Pixel (browser) + Conversions API (server-side).</small></div>
+						<label class="mpc-toggle-track"><input type="checkbox" name="mpc_snapchat_enabled" value="1" <?php checked(1, get_option('mpc_snapchat_enabled', 0)); ?>><span class="mpc-toggle-slider"></span></label>
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_snapchat_pixel_id">Pixel ID</label>
+						<input type="text" id="mpc_snapchat_pixel_id" name="mpc_snapchat_pixel_id" value="<?php echo esc_attr( get_option('mpc_snapchat_pixel_id') ); ?>" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+						<small>Snapchat Ads → Events Manager → Pixel.</small>
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_snapchat_access_token">Conversions API Token <span style="opacity:.6;">(optional — enables server-side)</span></label>
+						<input type="text" id="mpc_snapchat_access_token" name="mpc_snapchat_access_token" value="<?php echo esc_attr( get_option('mpc_snapchat_access_token') ); ?>" placeholder="Snapchat CAPI token" />
+						<small>Leave blank to track browser-only.</small>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- ═══════════════════════════════════════════ -->
+		<!-- TAB: CONSENT & PRIVACY -->
+		<!-- ═══════════════════════════════════════════ -->
+		<div class="mpc-tab-panel" data-panel="consent">
+			<?php $consent_provider = get_option( 'mpc_consent_provider', 'none' ); ?>
+			<div class="mpc-card">
+				<div class="mpc-card-head">
+					<span class="dashicons dashicons-shield"></span>
+					<h3>Consent Gating (GDPR)</h3>
+				</div>
+				<div class="mpc-card-body">
+					<div class="mpc-switch">
+						<div class="mpc-switch-label">Require Consent Before Tracking<small>When on, no browser pixel or server event fires until the visitor grants consent.</small></div>
+						<label class="mpc-toggle-track"><input type="checkbox" name="mpc_consent_required" value="1" <?php checked(1, get_option('mpc_consent_required', 0)); ?>><span class="mpc-toggle-slider"></span></label>
+					</div>
+					<div class="mpc-switch">
+						<div class="mpc-switch-label">Google Consent Mode v2<small>Emit Google's consent signals (default denied → update on grant) so Google's modelling works before consent.</small></div>
+						<label class="mpc-toggle-track"><input type="checkbox" name="mpc_consent_mode_v2" value="1" <?php checked(1, get_option('mpc_consent_mode_v2', 0)); ?>><span class="mpc-toggle-slider"></span></label>
+					</div>
+
+					<div class="mpc-section-label" style="margin-top:20px;">Consent Source</div>
+					<div class="mpc-radio-group">
+						<label class="mpc-radio">
+							<input type="radio" name="mpc_consent_provider" value="none" <?php checked('none', $consent_provider); ?>>
+							<span class="mpc-radio-text"><strong>None</strong><small>No gating — track all visitors (legacy behaviour).</small></span>
+						</label>
+						<label class="mpc-radio">
+							<input type="radio" name="mpc_consent_provider" value="wp_consent_api" <?php checked('wp_consent_api', $consent_provider); ?>>
+							<span class="mpc-radio-text"><strong>WP Consent API (recommended)</strong><small>Auto-integrates with CookieYes, Complianz, Borlabs, Cookiebot and other Consent-API-compatible plugins.</small></span>
+						</label>
+						<label class="mpc-radio">
+							<input type="radio" name="mpc_consent_provider" value="cookie" <?php checked('cookie', $consent_provider); ?>>
+							<span class="mpc-radio-text"><strong>Custom Cookie</strong><small>Grant consent when a specific cookie is present / matches a value.</small></span>
+						</label>
+					</div>
+				</div>
+			</div>
+
+			<div class="mpc-card">
+				<div class="mpc-card-head">
+					<span class="dashicons dashicons-admin-network"></span>
+					<h3>Custom Cookie Rule</h3>
+				</div>
+				<div class="mpc-card-body">
+					<p style="color: var(--mpc-text-muted); margin-top: 0; font-size: .85rem;">Only used when Consent Source is set to “Custom Cookie”.</p>
+					<div class="mpc-field">
+						<label for="mpc_consent_cookie_name">Cookie Name</label>
+						<input type="text" id="mpc_consent_cookie_name" name="mpc_consent_cookie_name" value="<?php echo esc_attr( get_option('mpc_consent_cookie_name') ); ?>" placeholder="e.g. marketing_consent" />
+					</div>
+					<div class="mpc-field">
+						<label for="mpc_consent_cookie_value">Required Value <span style="opacity:.6;">(leave blank = any value)</span></label>
+						<input type="text" id="mpc_consent_cookie_value" name="mpc_consent_cookie_value" value="<?php echo esc_attr( get_option('mpc_consent_cookie_value') ); ?>" placeholder="e.g. yes" />
 					</div>
 				</div>
 			</div>
@@ -321,7 +564,15 @@
 					<h3>CAPI Event Log</h3>
 				</div>
 				<div class="mpc-card-body">
-					<p style="color: var(--mpc-text-muted); margin-top: 0; font-size: .85rem;">Last 50 server-side events. Check the <strong>Data Sent</strong> column to verify what PII fields were hashed and included (this directly determines your Event Match Quality score).</p>
+					<p style="color: var(--mpc-text-muted); margin-top: 0; font-size: .85rem;">Last 50 server-side events across all platforms. Check the <strong>Data Sent</strong> column to verify what PII fields were hashed and included (this directly determines your Meta Event Match Quality score).</p>
+					<div class="mpc-log-toolbar">
+						<button type="button" class="mpc-filter-pill active" data-filter="all">All</button>
+						<button type="button" class="mpc-filter-pill" data-filter="server">Meta</button>
+						<button type="button" class="mpc-filter-pill" data-filter="ga4">GA4</button>
+						<button type="button" class="mpc-filter-pill" data-filter="tiktok">TikTok</button>
+						<button type="button" class="mpc-filter-pill" data-filter="pinterest">Pinterest</button>
+						<button type="button" class="mpc-filter-pill" data-filter="snapchat">Snapchat</button>
+					</div>
 					<div class="mpc-table-wrap">
 						<table class="mpc-table">
 							<thead>

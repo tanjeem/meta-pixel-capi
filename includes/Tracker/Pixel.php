@@ -55,7 +55,14 @@ class Pixel {
 		s.parentNode.insertBefore(t,s)}(window, document,'script',
 		'https://connect.facebook.net/en_US/fbevents.js');
 		fbq('init', '<?php echo esc_js( $pixel_id ); ?>');
-		fbq('track', 'PageView', {}, {eventID: '<?php echo esc_js( $pageview_event_id ); ?>'});
+
+		function mpc_start_meta() {
+			if (typeof fbq !== "function") { return; }
+			fbq('consent', 'grant');
+			fbq('track', 'PageView', {}, {eventID: '<?php echo esc_js( $pageview_event_id ); ?>'});
+			mpc_init_observer();
+			mpc_track_global_events();
+		}
 
 		function mpc_init_observer() {
 			function checkEvents() {
@@ -122,14 +129,20 @@ class Pixel {
 			<?php endif; ?>
 		}
 
+		function mpc_boot_meta() {
+			// Gate on consent when a consent manager requires it; else fire now.
+			if (window.mpcConsent && window.mpcConsent.cfg && window.mpcConsent.cfg.required) {
+				fbq('consent', 'revoke');
+				window.mpcConsent.onGrant('marketing', mpc_start_meta);
+			} else {
+				mpc_start_meta();
+			}
+		}
+
 		if (document.readyState === 'loading') {
-			document.addEventListener('DOMContentLoaded', function() {
-				mpc_init_observer();
-				mpc_track_global_events();
-			});
+			document.addEventListener('DOMContentLoaded', mpc_boot_meta);
 		} else {
-			mpc_init_observer();
-			mpc_track_global_events();
+			mpc_boot_meta();
 		}
 		</script>
 		<!-- End Meta Pixel Code -->

@@ -35,7 +35,7 @@ class RetryQueue {
 
 		if ( ! $token || ! $pixel_id ) return;
 
-		$url = "https://graph.facebook.com/v19.0/{$pixel_id}/events?access_token={$token}";
+		$url = "https://graph.facebook.com/" . MPC_GRAPH_VERSION . "/{$pixel_id}/events?access_token={$token}";
 
 		foreach ( $items as $item ) {
 			$response = wp_remote_post( $url, array(

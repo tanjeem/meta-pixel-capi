@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<ruleset name="Meta Pixel &amp; CAPI">
+	<description>High-signal checks: PHP version compatibility + WordPress security sniffs. Full WPCS style is intentionally not enforced.</description>
+
+	<!-- Scan the plugin's own code only. -->
+	<file>.</file>
+	<exclude-pattern>*/includes/plugin-update-checker/*</exclude-pattern>
+	<exclude-pattern>*/dist/*</exclude-pattern>
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+	<exclude-pattern>*/node_modules/*</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="sp"/>
+
+	<!-- Fail on errors only; warnings are informational. -->
+	<config name="minimum_supported_wp_version" value="5.8"/>
+
+	<!-- Ensure the code runs on the declared minimum PHP and up. -->
+	<config name="testVersion" value="7.4-"/>
+	<rule ref="PHPCompatibilityWP"/>
+
+	<!-- Security is what we actually want CI to guard. -->
+	<rule ref="WordPress.Security.EscapeOutput"/>
+	<rule ref="WordPress.Security.NonceVerification"/>
+	<rule ref="WordPress.Security.ValidatedSanitizedInput"/>
+	<rule ref="WordPress.DB.PreparedSQL"/>
+</ruleset>

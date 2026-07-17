@@ -61,9 +61,6 @@ class Capi {
 		// ── AJAX Pixel Helpers ───────────────────────────────────────
 		add_filter( 'woocommerce_add_to_cart_fragments', [ $this, 'add_to_cart_fragment' ] );
 		add_action( 'wp_footer', [ $this, 'print_client_add_to_cart' ], 20 );
-
-		// ── Async log updater (cron) ─────────────────────────────────
-		add_action( 'mpc_async_log_response', [ $this, 'async_log_response' ], 10, 3 );
 	}
 
 	// ═══════════════════════════════════════════════════════════
@@ -182,46 +179,15 @@ class Capi {
 
 		// LTV & order count (only if toggle is on)
 		if ( get_option( 'mpc_enable_ltv', 1 ) ) {
-			global $wpdb;
 			$user_id = is_user_logged_in() ? get_current_user_id() : 0;
 			$email   = '';
-			if ( ! $user_id && function_exists('WC') && isset( WC()->session ) ) {
-				$customer = WC()->customer;
-				if ( $customer ) $email = $customer->get_billing_email();
+			if ( ! $user_id && function_exists('WC') && ! is_null( WC()->customer ) ) {
+				$email = WC()->customer->get_billing_email();
 			}
 
-			$ltv          = 0;
-			$orders_count = 0;
-
-			if ( $user_id || $email ) {
-				$query = "SELECT SUM(pm.meta_value) as ltv, COUNT(p.ID) as cnt
-				          FROM {$wpdb->posts} as p
-				          INNER JOIN {$wpdb->postmeta} as pm ON p.ID = pm.post_id
-				          WHERE p.post_type = 'shop_order'
-				          AND p.post_status IN ('wc-completed', 'wc-processing')
-				          AND pm.meta_key = '_order_total'";
-
-				if ( $user_id ) {
-					$query .= $wpdb->prepare(
-						" AND p.ID IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_customer_user' AND meta_value = %d)",
-						$user_id
-					);
-				} else {
-					$query .= $wpdb->prepare(
-						" AND p.ID IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_billing_email' AND meta_value = %s)",
-						$email
-					);
-				}
-
-				$result = $wpdb->get_row( $query );
-				if ( $result ) {
-					$ltv          = (float) $result->ltv;
-					$orders_count = (int) $result->cnt;
-				}
-			}
-
-			$custom_data['lifetime_value'] = $ltv;
-			$custom_data['total_orders']   = $orders_count;
+			$totals = $this->get_customer_ltv( $user_id, $email );
+			$custom_data['lifetime_value'] = $totals['ltv'];
+			$custom_data['total_orders']   = $totals['orders'];
 		}
 
 		// User role
@@ -239,6 +205,54 @@ class Capi {
 	private function current_url() {
 		$scheme = is_ssl() ? 'https://' : 'http://';
 		return $scheme . ( $_SERVER['HTTP_HOST'] ?? '' ) . ( $_SERVER['REQUEST_URI'] ?? '' );
+	}
+
+	/**
+	 * Lifetime value + paid-order count for a customer.
+	 *
+	 * HPOS-safe: uses wc_get_orders() (the CRUD layer) instead of raw wp_posts SQL,
+	 * so it works on both legacy post storage and High-Performance Order Storage.
+	 * Cached per user/email for 6 hours to avoid a DB hit on every tracked event.
+	 *
+	 * @return array{ltv: float, orders: int}
+	 */
+	private function get_customer_ltv( $user_id, $email ) {
+		if ( ! $user_id && ! $email ) {
+			return [ 'ltv' => 0.0, 'orders' => 0 ];
+		}
+		if ( ! function_exists( 'wc_get_orders' ) ) {
+			return [ 'ltv' => 0.0, 'orders' => 0 ];
+		}
+
+		$cache_key = 'mpc_ltv_' . ( $user_id ? 'u' . $user_id : 'e' . md5( strtolower( $email ) ) );
+		$cached    = get_transient( $cache_key );
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+
+		$args = [
+			'status' => [ 'wc-completed', 'wc-processing' ],
+			'limit'  => 100,
+			'return' => 'objects',
+		];
+		if ( $user_id ) {
+			$args['customer_id'] = $user_id;
+		} else {
+			$args['billing_email'] = $email;
+		}
+
+		$orders = wc_get_orders( $args );
+		$ltv    = 0.0;
+		$count  = is_array( $orders ) ? count( $orders ) : 0;
+		if ( is_array( $orders ) ) {
+			foreach ( $orders as $order ) {
+				$ltv += (float) $order->get_total();
+			}
+		}
+
+		$result = [ 'ltv' => round( $ltv, 2 ), 'orders' => $count ];
+		set_transient( $cache_key, $result, 6 * HOUR_IN_SECONDS );
+		return $result;
 	}
 
 	// ═══════════════════════════════════════════════════════════
@@ -426,10 +440,13 @@ class Capi {
 
 	private function do_purchase( $order_id, $print_html ) {
 		if ( ! get_option( 'mpc_ev_purchase', 1 ) ) return;
-		if ( ! $order_id || get_post_meta( $order_id, '_mpc_purchase_tracked', true ) ) return;
+		if ( ! $order_id ) return;
 
 		$order = wc_get_order( $order_id );
 		if ( ! $order ) return;
+
+		// HPOS-safe dedup guard: read the flag off the order object, not post meta.
+		if ( $order->get_meta( '_mpc_purchase_tracked' ) ) return;
 
 		// Advanced status filtering
 		if ( get_option( 'mpc_purchase_status_filter', 1 ) ) {
@@ -479,16 +496,14 @@ class Capi {
 			$order_count = wc_get_customer_order_count( $customer_id );
 			$is_new_customer = ( $order_count <= 1 );
 		} elseif ( $billing_email ) {
-			global $wpdb;
-			$past_orders = (int) $wpdb->get_var( $wpdb->prepare(
-				"SELECT COUNT(p.ID) FROM {$wpdb->posts} p
-				 INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-				 WHERE p.post_type = 'shop_order'
-				 AND p.post_status IN ('wc-completed', 'wc-processing')
-				 AND pm.meta_key = '_billing_email' AND pm.meta_value = %s",
-				$billing_email
-			) );
-			$is_new_customer = ( $past_orders <= 1 );
+			// HPOS-safe: count paid orders for this email via the CRUD layer.
+			$past_orders = wc_get_orders( [
+				'status'        => [ 'wc-completed', 'wc-processing' ],
+				'billing_email' => $billing_email,
+				'limit'         => 2,
+				'return'        => 'ids',
+			] );
+			$is_new_customer = ( count( (array) $past_orders ) <= 1 );
 		}
 
 		$event_data = $this->get_advanced_custom_data( [
@@ -503,7 +518,8 @@ class Capi {
 		] );
 
 		$this->queue_event( 'Purchase', $this->get_common_user_data( $extra_user_data ), $event_data, $event_id, $print_html, $order->get_checkout_order_received_url(), $order_id );
-		update_post_meta( $order_id, '_mpc_purchase_tracked', true );
+		$order->update_meta_data( '_mpc_purchase_tracked', 1 );
+		$order->save();
 
 		// Clear checkout session PII
 		if ( function_exists('WC') && isset( WC()->session ) ) {
@@ -567,6 +583,9 @@ class Capi {
 		$pixel_id = get_option( 'mpc_pixel_id' );
 		if ( ! $token || ! $pixel_id ) return;
 
+		// Respect GDPR consent (Meta is an advertising platform).
+		if ( ! \Mpc\Consent\ConsentManager::allows( 'marketing' ) ) return;
+
 		// Pre-log with status=pending immediately
 		$log_id = $this->log_event_pending( $event_name, $event_id, $custom_data, $user_data );
 
@@ -604,6 +623,14 @@ class Capi {
 		$pixel_id = get_option( 'mpc_pixel_id' );
 		if ( ! $token || ! $pixel_id ) return;
 
+		// Deliver the page to the visitor BEFORE we make the outbound CAPI call.
+		// On PHP-FPM this closes the client connection so the request time is not
+		// perceived by the user, while still letting us block on the API response
+		// to record accurate status codes in the event log.
+		if ( function_exists( 'fastcgi_finish_request' ) ) {
+			fastcgi_finish_request();
+		}
+
 		$chunks = array_chunk( $this->event_queue, 50 );
 		global $wpdb;
 
@@ -627,12 +654,12 @@ class Capi {
 				$payload['test_event_code'] = $test_code;
 			}
 
-			$url = "https://graph.facebook.com/v19.0/{$pixel_id}/events?access_token={$token}";
+			$url = "https://graph.facebook.com/" . MPC_GRAPH_VERSION . "/{$pixel_id}/events?access_token={$token}";
 
 			$response = wp_remote_post( $url, [
 				'body'     => wp_json_encode( $payload ),
 				'headers'  => [ 'Content-Type' => 'application/json' ],
-				'timeout'  => 5,
+				'timeout'  => 10,
 				'blocking' => true,
 			] );
 
@@ -649,7 +676,11 @@ class Capi {
 				
 				if ( $status == 200 && ! empty( $order_ids_to_flag ) ) {
 					foreach ( $order_ids_to_flag as $oid ) {
-						update_post_meta( $oid, '_mpc_capi_sent', 1 );
+						$flag_order = wc_get_order( $oid );
+						if ( $flag_order ) {
+							$flag_order->update_meta_data( '_mpc_capi_sent', 1 );
+							$flag_order->save();
+						}
 					}
 				}
 			}
@@ -692,15 +723,5 @@ class Capi {
 			]
 		);
 		return $wpdb->insert_id;
-	}
-
-	/** Called by AdminMenu AJAX to manually retry. */
-	public function async_log_response( $log_id, $status, $response_body ) {
-		global $wpdb;
-		$wpdb->update(
-			"{$wpdb->prefix}mpc_event_logs",
-			[ 'status' => $status, 'response' => $response_body ],
-			[ 'id' => $log_id ]
-		);
 	}
 }

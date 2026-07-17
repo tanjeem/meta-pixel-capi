@@ -16,6 +16,7 @@ class Plugin {
 	}
 
 	private function load_dependencies() {
+		Consent\ConsentManager::get_instance();
 		Admin\AdminMenu::get_instance();
 		Tracker\Pixel::get_instance();
 		Tracker\Capi::get_instance();
@@ -26,7 +27,32 @@ class Plugin {
 		Marketing\CatalogFeed::get_instance();
 		Marketing\AbandonedCart::get_instance();
 
+		$this->register_channels();
+
 		add_action( 'admin_init', [ $this, 'check_version' ] );
+	}
+
+	/**
+	 * Register the multi-platform tracking channels on the event bus and boot
+	 * the WooCommerce collector that feeds them. Meta keeps its own dedicated
+	 * path (Tracker\Capi) for now; these are the additional platforms.
+	 */
+	private function register_channels() {
+		$bus = Events\EventBus::get_instance();
+		$bus->register( new Channels\GA4Channel() );
+		$bus->register( new Channels\GoogleAdsChannel() );
+		$bus->register( new Channels\TikTokChannel() );
+		$bus->register( new Channels\PinterestChannel() );
+		$bus->register( new Channels\SnapchatChannel() );
+
+		/**
+		 * Allow add-ons to register further channels.
+		 *
+		 * @param Events\EventBus $bus
+		 */
+		do_action( 'mpc_register_channels', $bus );
+
+		Events\Collector::boot();
 	}
 
 	public function check_version() {

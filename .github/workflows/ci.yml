@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  php-lint:
+    name: PHP syntax (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ '7.4', '8.0', '8.2', '8.3' ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Lint all plugin PHP files
+        run: |
+          find . -type f -name '*.php' \
+            -not -path './includes/plugin-update-checker/*' \
+            -not -path './dist/*' \
+            -not -path './vendor/*' \
+            -print0 | xargs -0 -n1 -P4 php -l
+
+  js-lint:
+    name: JavaScript syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check bundled JS
+        run: |
+          node --check assets/frontend/tracker.js
+          node --check assets/admin/js/admin.js
+
+  phpcs:
+    name: Security & PHP compatibility (informational)
+    runs-on: ubuntu-latest
+    # Informational: surfaces findings without blocking merges while the
+    # codebase is brought fully up to the WordPress security ruleset.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+          tools: composer
+
+      - name: Install dev dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Run PHPCS
+        run: vendor/bin/phpcs
