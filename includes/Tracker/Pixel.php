@@ -12,8 +12,23 @@ class Pixel {
 	}
 
 	private function __construct() {
+		add_action( 'init', [ $this, 'generate_server_cookies' ] );
 		add_action( 'wp_head', [ $this, 'inject_pixel_base' ], 1 );
 		add_action( 'wp_footer', [ $this, 'inject_fragment_container' ], 5 );
+	}
+
+	public function generate_server_cookies() {
+		// Server-Side First-Party Cookie Generation (Safari ITP Beater)
+		// We set this via PHP Set-Cookie header so it lives up to 2 years instead of 7 days
+		if ( ! isset( $_COOKIE['_fbp'] ) && ! headers_sent() ) {
+			$timestamp = round( microtime( true ) * 1000 );
+			$random_id = mt_rand( 1000000000, 9999999999 );
+			$fbp       = "fb.1.{$timestamp}.{$random_id}";
+			
+			// Set for 2 years (63072000 seconds)
+			setcookie( '_fbp', $fbp, time() + 63072000, '/' );
+			$_COOKIE['_fbp'] = $fbp; // Make available immediately in this request
+		}
 	}
 
 	public function inject_pixel_base() {
