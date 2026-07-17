@@ -125,7 +125,17 @@ class AdminMenu {
 			] );
 		} else {
 			$error_msg = $body['error']['message'] ?? 'Invalid response from Meta API.';
-			wp_send_json_error( ['message' => esc_html( $error_msg )] );
+			$error_code = $body['error']['code'] ?? 0;
+			
+			// CAPI tokens generated from Events Manager often lack read access to the Pixel node itself.
+			if ( $error_code == 100 && strpos( $error_msg, 'Missing Permission' ) !== false ) {
+				wp_send_json_success( [
+					'name' => 'Hidden by Meta (Token is valid for sending events)',
+					'creation_time' => 'Unknown'
+				] );
+			} else {
+				wp_send_json_error( ['message' => esc_html( $error_msg )] );
+			}
 		}
 	}
 

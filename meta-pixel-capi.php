@@ -3,7 +3,7 @@
  * Plugin Name: Meta Pixel & CAPI Ultimate for WooCommerce
  * Plugin URI:  https://example.com/
  * Description: Advanced Meta SDK Integration, Server-side CAPI, Strict Deduplication, and Fake Order Protection.
- * Version:     1.2.3
+ * Version:     1.2.4
  * Author:      Tanzeem
  * Author URI:  https://example.com/
  * Text Domain: meta-pixel-capi
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
 
-define( 'MPC_VERSION', '1.2.3' );
+define( 'MPC_VERSION', '1.2.4' );
 define( 'MPC_PLUGIN_FILE', __FILE__ );
 define( 'MPC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MPC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
