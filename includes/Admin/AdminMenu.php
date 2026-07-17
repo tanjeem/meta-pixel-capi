@@ -18,6 +18,7 @@ class AdminMenu {
 		add_action( 'wp_ajax_mpc_retry_queue', [ $this, 'ajax_retry_queue' ] );
 		add_action( 'wp_ajax_mpc_clear_logs', [ $this, 'ajax_clear_logs' ] );
 		add_action( 'wp_ajax_mpc_test_token', [ $this, 'ajax_test_token' ] );
+		add_action( 'wp_ajax_mpc_fetch_logs_html', [ $this, 'ajax_fetch_logs_html' ] );
 	}
 
 	public function register_menus() {
@@ -126,5 +127,51 @@ class AdminMenu {
 			$error_msg = $body['error']['message'] ?? 'Invalid response from Meta API.';
 			wp_send_json_error( ['message' => esc_html( $error_msg )] );
 		}
+	}
+
+	public function ajax_fetch_logs_html() {
+		if ( ! current_user_can('manage_options') ) wp_send_json_error();
+
+		global $wpdb;
+		$logs = $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}mpc_event_logs ORDER BY id DESC LIMIT 50" );
+		
+		ob_start();
+		if ( empty($logs) ) : ?>
+			<tr><td colspan="6" style="text-align:center; color: var(--mpc-text-dim); padding: 30px;">No events logged yet. Events will appear here once your Pixel ID and CAPI Token are configured.</td></tr>
+		<?php else :
+			foreach ( $logs as $log ) :
+				$payload = json_decode( $log->response, true );
+				$user_data_raw = json_decode( $log->payload ?? '{}', true );
+				$ud = $user_data_raw['data'][0]['user_data'] ?? [];
+				$fields = ['em'=>'Email','ph'=>'Phone','fn'=>'First Name','ln'=>'Last Name','ct'=>'City','st'=>'State','zp'=>'ZIP','country'=>'Country','fbp'=>'FBP','fbc'=>'FBC','external_id'=>'ExtID'];
+		?>
+		<tr>
+			<td><strong><?php echo esc_html($log->event_name); ?></strong></td>
+			<td style="font-size:.75rem; color: var(--mpc-text-dim); word-break: break-all; min-width:180px;"><?php echo esc_html( $log->event_id ); ?></td>
+			<td><span class="mpc-badge mpc-badge-info">Server</span></td>
+			<td>
+				<?php if ( $log->status == 200 ) : ?>
+					<span class="mpc-badge mpc-badge-ok">200 OK</span>
+				<?php else : ?>
+					<span class="mpc-badge mpc-badge-danger"><?php echo esc_html($log->status); ?></span>
+				<?php endif; ?>
+			</td>
+			<td>
+				<div class="mpc-chip-row">
+					<?php foreach ( $fields as $key => $label ) :
+						if ( ! empty( $ud[$key] ) ) : ?>
+							<span class="mpc-chip mpc-chip-ok">✓ <?php echo $label; ?></span>
+						<?php else : ?>
+							<span class="mpc-chip mpc-chip-miss">✗ <?php echo $label; ?></span>
+						<?php endif;
+					endforeach; ?>
+				</div>
+			</td>
+			<td style="font-size: .8rem; color: var(--mpc-text-dim); white-space: nowrap;"><?php echo esc_html($log->created_at); ?></td>
+		</tr>
+		<?php endforeach;
+		endif;
+		$html = ob_get_clean();
+		wp_send_json_success( ['html' => $html] );
 	}
 }

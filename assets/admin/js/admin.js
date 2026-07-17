@@ -7,7 +7,31 @@ jQuery(document).ready(function($) {
 		$(this).addClass('active');
 		$('.mpc-tab-panel').removeClass('active');
 		$('.mpc-tab-panel[data-panel="' + tab + '"]').addClass('active');
+		
+		if (tab === 'logs') {
+			mpc_fetch_logs();
+		}
 	});
+
+	// ── Auto-Refresh Event Logs ──
+	function mpc_fetch_logs() {
+		$.post(ajaxurl, {
+			action: 'mpc_fetch_logs_html',
+			mpc_nonce: $('#mpc-settings-form input[name="mpc_nonce"]').val()
+		}, function(res) {
+			if (res.success && res.data.html) {
+				$('#mpc-log-body').html(res.data.html);
+			}
+		});
+	}
+	
+	// Initial fetch and poll every 10 seconds
+	mpc_fetch_logs();
+	setInterval(function() {
+		if ($('.mpc-tab-panel[data-panel="logs"]').hasClass('active')) {
+			mpc_fetch_logs();
+		}
+	}, 10000);
 
 	// ── AJAX Save ──
 	$('#mpc-settings-form').on('submit', function(e) {
