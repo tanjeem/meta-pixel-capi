@@ -40,7 +40,7 @@ function mpc_init() {
 	if ( file_exists( MPC_PLUGIN_DIR . 'includes/plugin-update-checker/plugin-update-checker.php' ) ) {
 		require_once MPC_PLUGIN_DIR . 'includes/plugin-update-checker/plugin-update-checker.php';
 		$myUpdateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-			'https://github.com/tanzeem/meta-pixel-capi/',
+			'https://github.com/tanjeem/meta-pixel-capi/',
 			__FILE__,
 			'meta-pixel-capi'
 		);
