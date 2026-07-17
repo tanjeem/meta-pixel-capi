@@ -1,0 +1,494 @@
+<?php
+namespace Mpc\Tracker;
+
+class Capi {
+	private static $instance = null;
+	private $pending_ac_events = [];
+	private $pending_rfc_events = [];
+
+	public static function get_instance() {
+		if ( null === self::$instance ) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
+
+	private function __construct() {
+		add_action( 'woocommerce_checkout_update_order_review', [ $this, 'capture_classic_checkout_pii' ] );
+		add_action( 'woocommerce_store_api_cart_update_customer_from_request', [ $this, 'capture_block_checkout_pii' ], 10, 2 );
+
+		add_action( 'woocommerce_before_shop_loop', [ $this, 'send_view_category_event' ] );
+		add_action( 'woocommerce_before_cart', [ $this, 'send_view_cart_event' ] );
+		add_action( 'woocommerce_remove_cart_item', [ $this, 'send_remove_from_cart_event' ], 10, 2 );
+
+		add_action( 'woocommerce_after_single_product', [ $this, 'send_view_content_event' ] );
+		add_action( 'woocommerce_add_to_cart', [ $this, 'send_add_to_cart_event' ], 10, 6 );
+		add_action( 'woocommerce_before_checkout_form', [ $this, 'send_initiate_checkout_event' ] );
+		
+		add_action( 'woocommerce_thankyou', [ $this, 'send_purchase_event' ] );
+		add_action( 'woocommerce_order_status_processing', [ $this, 'send_purchase_event_server_only' ] );
+		add_action( 'woocommerce_order_status_completed', [ $this, 'send_purchase_event_server_only' ] );
+		
+		add_filter( 'woocommerce_add_to_cart_fragments', [ $this, 'add_to_cart_fragment' ] );
+		add_action( 'wp_footer', [ $this, 'print_client_add_to_cart' ], 20 );
+	}
+
+	public function capture_classic_checkout_pii( $post_data ) {
+		parse_str( $post_data, $fields );
+		$this->apply_checkout_pii( array(
+			'email'      => $fields['billing_email']      ?? '',
+			'phone'      => $fields['billing_phone']      ?? '',
+			'first_name' => $fields['billing_first_name'] ?? '',
+			'last_name'  => $fields['billing_last_name']  ?? '',
+			'city'       => $fields['billing_city']       ?? '',
+			'state'      => $fields['billing_state']      ?? '',
+			'postcode'   => $fields['billing_postcode']   ?? '',
+			'country'    => $fields['billing_country']    ?? '',
+		) );
+	}
+
+	public function capture_block_checkout_pii( $customer, $request ) {
+		if ( ! is_a( $customer, 'WC_Customer' ) ) return;
+		$this->apply_checkout_pii( array(
+			'email'      => $customer->get_billing_email(),
+			'phone'      => $customer->get_billing_phone(),
+			'first_name' => $customer->get_billing_first_name(),
+			'last_name'  => $customer->get_billing_last_name(),
+			'city'       => $customer->get_billing_city(),
+			'state'      => $customer->get_billing_state(),
+			'postcode'   => $customer->get_billing_postcode(),
+			'country'    => $customer->get_billing_country(),
+		) );
+	}
+
+	private function apply_checkout_pii( array $raw ) {
+		if ( ! function_exists('WC') || is_null(WC()->session) ) return;
+		$existing = WC()->session->get( 'mpc_checkout_user_data', [] );
+		$data = $existing;
+
+		if ( ! empty( $raw['email'] ) )      $data['em'] = hash( 'sha256', strtolower( trim( $raw['email'] ) ) );
+		if ( ! empty( $raw['phone'] ) )      $data['ph'] = hash( 'sha256', preg_replace( '/[^0-9]/', '', $raw['phone'] ) );
+		if ( ! empty( $raw['first_name'] ) ) $data['fn'] = hash( 'sha256', strtolower( trim( $raw['first_name'] ) ) );
+		if ( ! empty( $raw['last_name'] ) )  $data['ln'] = hash( 'sha256', strtolower( trim( $raw['last_name'] ) ) );
+		if ( ! empty( $raw['city'] ) )       $data['ct'] = hash( 'sha256', strtolower( preg_replace( '/\s+/', '', $raw['city'] ) ) );
+		if ( ! empty( $raw['state'] ) )      $data['st'] = hash( 'sha256', strtolower( $raw['state'] ) );
+		if ( ! empty( $raw['postcode'] ) )   $data['zp'] = hash( 'sha256', strtolower( preg_replace( '/\s+/', '', $raw['postcode'] ) ) );
+		if ( ! empty( $raw['country'] ) )    $data['country'] = hash( 'sha256', strtolower( $raw['country'] ) );
+
+		if ( $data !== $existing ) {
+			WC()->session->set( 'mpc_checkout_user_data', $data );
+		}
+	}
+
+	private function get_fbp_fbc() {
+		$data = [];
+		if ( ! empty( $_COOKIE['_fbp'] ) ) $data['fbp'] = sanitize_text_field( $_COOKIE['_fbp'] );
+
+		if ( ! empty( $_COOKIE['_fbc'] ) ) {
+			$data['fbc'] = sanitize_text_field( $_COOKIE['_fbc'] );
+		} elseif ( ! empty( $_GET['fbclid'] ) ) {
+			$data['fbc'] = 'fb.1.' . time() . '.' . sanitize_text_field( $_GET['fbclid'] );
+			if ( function_exists('WC') && isset( WC()->session ) ) {
+				WC()->session->set( 'mpc_derived_fbc', $data['fbc'] );
+			}
+		} elseif ( function_exists('WC') && isset( WC()->session ) ) {
+			$stored_fbc = WC()->session->get( 'mpc_derived_fbc' );
+			if ( ! empty( $stored_fbc ) ) $data['fbc'] = $stored_fbc;
+		}
+
+		return $data;
+	}
+
+	private function get_common_user_data( $extra = [] ) {
+		$user_data = array_merge( [
+			'client_ip_address' => \WC_Geolocation::get_ip_address(),
+			'client_user_agent' => isset( $_SERVER['HTTP_USER_AGENT'] ) ? $_SERVER['HTTP_USER_AGENT'] : '',
+		], $this->get_fbp_fbc() );
+
+		if ( is_user_logged_in() ) {
+			$user = wp_get_current_user();
+			if ( ! empty( $user->user_email ) )     $user_data['em'] = hash( 'sha256', strtolower( trim( $user->user_email ) ) );
+			if ( ! empty( $user->user_firstname ) ) $user_data['fn'] = hash( 'sha256', strtolower( trim( $user->user_firstname ) ) );
+			if ( ! empty( $user->user_lastname ) )  $user_data['ln'] = hash( 'sha256', strtolower( trim( $user->user_lastname ) ) );
+			$user_data['external_id'] = hash( 'sha256', (string) $user->ID );
+		}
+
+		if ( function_exists('WC') && isset( WC()->session ) ) {
+			$checkout_data = WC()->session->get( 'mpc_checkout_user_data', [] );
+			$user_data = array_merge( $user_data, $checkout_data );
+		}
+		
+		return array_merge( $user_data, $extra );
+	}
+	
+	private function get_advanced_custom_data( $custom_data = [] ) {
+		// UTMs
+		$utms = [ 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term' ];
+		foreach ( $utms as $utm ) {
+			if ( isset( $_COOKIE[ 'mpc_' . $utm ] ) ) {
+				$custom_data[ $utm ] = sanitize_text_field( $_COOKIE[ 'mpc_' . $utm ] );
+			}
+		}
+
+		// LTV & Total Orders Cache via WPDB
+		global $wpdb;
+		$user_id = is_user_logged_in() ? get_current_user_id() : 0;
+		$email = '';
+		if ( ! $user_id && function_exists('WC') && isset( WC()->session ) ) {
+			$customer = WC()->customer;
+			if ( $customer ) $email = $customer->get_billing_email();
+		}
+		
+		$ltv = 0;
+		$orders_count = 0;
+		
+		if ( $user_id || $email ) {
+			$query = "SELECT SUM(meta_value) as ltv, COUNT(posts.ID) as cnt FROM {$wpdb->posts} as posts 
+			          INNER JOIN {$wpdb->postmeta} as postmeta ON posts.ID = postmeta.post_id 
+			          WHERE posts.post_type = 'shop_order' AND posts.post_status IN ('wc-completed', 'wc-processing') 
+			          AND postmeta.meta_key = '_order_total'";
+			
+			if ( $user_id ) {
+				$query .= $wpdb->prepare( " AND posts.ID IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_customer_user' AND meta_value = %d)", $user_id );
+			} else {
+				$query .= $wpdb->prepare( " AND posts.ID IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_billing_email' AND meta_value = %s)", $email );
+			}
+			
+			$result = $wpdb->get_row( $query );
+			if ( $result ) {
+				$ltv = (float) $result->ltv;
+				$orders_count = (int) $result->cnt;
+			}
+		}
+		
+		$custom_data['lifetime_value'] = $ltv;
+		$custom_data['total_orders'] = $orders_count;
+		
+		if ( $user_id ) {
+			$user = get_userdata( $user_id );
+			$custom_data['user_role'] = $user ? implode( ',', $user->roles ) : 'guest';
+		} else {
+			$custom_data['user_role'] = 'guest';
+		}
+
+		return $custom_data;
+	}
+
+	private function current_url() {
+		$scheme = is_ssl() ? 'https://' : 'http://';
+		return $scheme . ( $_SERVER['HTTP_HOST'] ?? '' ) . ( $_SERVER['REQUEST_URI'] ?? '' );
+	}
+
+	public function send_page_view_event( $event_id ) {
+		$this->build_and_send_event( 'PageView', $this->get_common_user_data(), $this->get_advanced_custom_data(), $event_id, false );
+	}
+
+	public function send_view_category_event() {
+		if ( ! is_product_category() ) return;
+		$term = get_queried_object();
+		if ( ! $term ) return;
+		
+		$event_id = Deduplication::generate_event_id();
+		$event_data = $this->get_advanced_custom_data([
+			'content_name' => $term->name,
+			'content_category' => $term->name,
+		]);
+		$this->build_and_send_event( 'ViewCategory', $this->get_common_user_data(), $event_data, $event_id );
+	}
+
+	public function send_view_cart_event() {
+		$event_id = Deduplication::generate_event_id();
+		$event_data = $this->get_advanced_custom_data([
+			'value' => (float) WC()->cart->get_total( 'edit' ),
+			'currency' => get_woocommerce_currency(),
+		]);
+		$this->build_and_send_event( 'ViewCart', $this->get_common_user_data(), $event_data, $event_id );
+	}
+
+	public function send_remove_from_cart_event( $cart_item_key, $cart ) {
+		$removed_item = $cart->removed_cart_contents[ $cart_item_key ] ?? null;
+		if ( ! $removed_item ) return;
+		
+		$product = wc_get_product( $removed_item['product_id'] );
+		if ( ! $product ) return;
+
+		$event_id = Deduplication::generate_event_id();
+		$event_data = $this->get_advanced_custom_data([
+			'content_name'  => $product->get_name(),
+			'content_ids'   => [ (string) ( $product->get_sku() ?: $product->get_id() ) ],
+			'content_type'  => 'product',
+			'value'         => (float) $product->get_price() * (int) $removed_item['quantity'],
+			'currency'      => get_woocommerce_currency(),
+		]);
+
+		$this->build_and_send_event( 'RemoveFromCart', $this->get_common_user_data(), $event_data, $event_id, false );
+
+		$payload = [ 'event_id' => $event_id, 'event_data' => $event_data ];
+		if ( wp_doing_ajax() ) {
+			$this->pending_rfc_events[] = $payload;
+		} elseif ( function_exists('WC') && isset( WC()->session ) ) {
+			$pending = WC()->session->get( 'mpc_pending_remove_from_cart', [] );
+			$pending[] = $payload;
+			WC()->session->set( 'mpc_pending_remove_from_cart', $pending );
+		}
+	}
+
+	public function send_view_content_event() {
+		global $product;
+		if ( ! $product ) return;
+
+		$event_id = Deduplication::generate_event_id();
+		$event_data = $this->get_advanced_custom_data([
+			'content_name' => $product->get_name(),
+			'content_ids'  => [ (string) ( $product->get_sku() ?: $product->get_id() ) ],
+			'content_type' => 'product',
+			'value'        => (float) $product->get_price(),
+			'currency'     => get_woocommerce_currency(),
+		]);
+
+		$this->build_and_send_event( 'ViewContent', $this->get_common_user_data(), $event_data, $event_id );
+	}
+
+	public function send_add_to_cart_event( $cart_item_key, $product_id, $quantity, $variation_id, $variation, $cart_item_data ) {
+		$product = wc_get_product( $variation_id ?: $product_id );
+		if ( ! $product ) return;
+
+		$event_id = Deduplication::generate_event_id();
+		$id = (string) ( $product->get_sku() ?: $product->get_id() );
+		$event_data = $this->get_advanced_custom_data([
+			'content_name'  => $product->get_name(),
+			'content_ids'   => [ $id ],
+			'content_type'  => 'product',
+			'value'         => (float) $product->get_price() * (int) $quantity,
+			'currency'      => get_woocommerce_currency(),
+			'contents'      => [[
+				'id'         => $id,
+				'quantity'   => (int) $quantity,
+				'item_price' => (float) $product->get_price(),
+			]],
+		]);
+
+		$this->build_and_send_event( 'AddToCart', $this->get_common_user_data(), $event_data, $event_id, false );
+
+		$payload = [ 'event_id' => $event_id, 'event_data' => $event_data ];
+
+		if ( wp_doing_ajax() ) {
+			$this->pending_ac_events[] = $payload;
+		} elseif ( function_exists('WC') && isset( WC()->session ) ) {
+			$pending = WC()->session->get( 'mpc_pending_add_to_cart', [] );
+			$pending[] = $payload;
+			WC()->session->set( 'mpc_pending_add_to_cart', $pending );
+		}
+	}
+
+	public function add_to_cart_fragment( $fragments ) {
+		$html = '';
+		if ( ! empty( $this->pending_ac_events ) ) {
+			foreach ( $this->pending_ac_events as $event ) {
+				$json_data = esc_attr( wp_json_encode( $event['event_data'] ) );
+				$html .= "<div class='mpc-ajax-event' data-event-name='AddToCart' data-event-id='" . esc_attr($event['event_id']) . "' data-event-data='{$json_data}' style='display:none;'></div>";
+			}
+		}
+		if ( ! empty( $this->pending_rfc_events ) ) {
+			foreach ( $this->pending_rfc_events as $event ) {
+				$json_data = esc_attr( wp_json_encode( $event['event_data'] ) );
+				$html .= "<div class='mpc-ajax-event' data-event-name='RemoveFromCart' data-event-id='" . esc_attr($event['event_id']) . "' data-event-data='{$json_data}' style='display:none;'></div>";
+			}
+		}
+		if ( $html !== '' ) {
+			$fragments['div.mpc-fragment-events'] = "<div class='mpc-fragment-events' style='display:none;'>{$html}</div>";
+		}
+		return $fragments;
+	}
+
+	public function print_client_add_to_cart() {
+		if ( ! function_exists('WC') || ! isset( WC()->session ) ) return;
+		
+		$pending_ac = WC()->session->get( 'mpc_pending_add_to_cart' );
+		if ( ! empty( $pending_ac ) ) {
+			foreach ( $pending_ac as $event ) {
+				$json_data = esc_attr( wp_json_encode( $event['event_data'] ) );
+				echo "<div class='mpc-ajax-event' data-event-name='AddToCart' data-event-id='" . esc_attr($event['event_id']) . "' data-event-data='{$json_data}' style='display:none;'></div>";
+			}
+			WC()->session->set( 'mpc_pending_add_to_cart', null );
+		}
+
+		$pending_rfc = WC()->session->get( 'mpc_pending_remove_from_cart' );
+		if ( ! empty( $pending_rfc ) ) {
+			foreach ( $pending_rfc as $event ) {
+				$json_data = esc_attr( wp_json_encode( $event['event_data'] ) );
+				echo "<div class='mpc-ajax-event' data-event-name='RemoveFromCart' data-event-id='" . esc_attr($event['event_id']) . "' data-event-data='{$json_data}' style='display:none;'></div>";
+			}
+			WC()->session->set( 'mpc_pending_remove_from_cart', null );
+		}
+	}
+
+	public function send_initiate_checkout_event() {
+		if ( ! function_exists('is_checkout') || ! is_checkout() ) return;
+		if ( is_wc_endpoint_url('order-pay') || is_wc_endpoint_url('order-received') ) return;
+		if ( ! function_exists('WC') || is_null( WC()->cart ) || WC()->cart->is_empty() ) return;
+
+		$contents = [];
+		$content_ids = [];
+		foreach ( WC()->cart->get_cart() as $item ) {
+			$product = wc_get_product( $item['variation_id'] ?: $item['product_id'] );
+			$id = (string) ( $product ? ( $product->get_sku() ?: $product->get_id() ) : ( $item['variation_id'] ?: $item['product_id'] ) );
+			$content_ids[] = $id;
+			$contents[] = [
+				'id'         => $id,
+				'quantity'   => (int) $item['quantity'],
+				'item_price' => $item['quantity'] ? (float) $item['line_subtotal'] / $item['quantity'] : 0,
+			];
+		}
+
+		$event_id = Deduplication::generate_event_id();
+		$event_data = $this->get_advanced_custom_data([
+			'value'         => (float) WC()->cart->get_total( 'edit' ),
+			'currency'      => get_woocommerce_currency(),
+			'num_items'     => WC()->cart->get_cart_contents_count(),
+			'content_type'  => 'product',
+			'content_ids'   => array_values( array_unique( $content_ids ) ),
+			'contents'      => $contents,
+		]);
+
+		$this->build_and_send_event( 'InitiateCheckout', $this->get_common_user_data(), $event_data, $event_id );
+	}
+
+	public function send_purchase_event( $order_id ) {
+		$this->do_purchase( $order_id, true );
+	}
+
+	public function send_purchase_event_server_only( $order_id ) {
+		$this->do_purchase( $order_id, false );
+	}
+
+	private function do_purchase( $order_id, $print_html ) {
+		if ( ! $order_id || get_post_meta( $order_id, '_mpc_purchase_tracked', true ) ) return;
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) return;
+
+		// Advanced Order Status Filtering
+		if ( ! in_array( $order->get_status(), [ 'processing', 'completed' ] ) ) {
+			return;
+		}
+
+		if ( apply_filters( 'mpc_block_purchase_event', false, $order ) ) {
+			return;
+		}
+
+		$event_id = Deduplication::get_order_event_id( $order_id );
+
+		$extra_user_data = [
+			'client_ip_address' => $order->get_customer_ip_address(),
+			'client_user_agent' => $order->get_customer_user_agent(),
+		];
+
+		if ( $order->get_billing_email() )    $extra_user_data['em']      = hash( 'sha256', strtolower( trim( $order->get_billing_email() ) ) );
+		if ( $order->get_billing_phone() )    $extra_user_data['ph']      = hash( 'sha256', preg_replace( '/[^0-9]/', '', $order->get_billing_phone() ) );
+		if ( $order->get_billing_first_name())$extra_user_data['fn']      = hash( 'sha256', strtolower( trim( $order->get_billing_first_name() ) ) );
+		if ( $order->get_billing_last_name()) $extra_user_data['ln']      = hash( 'sha256', strtolower( trim( $order->get_billing_last_name() ) ) );
+		if ( $order->get_billing_city() )     $extra_user_data['ct']      = hash( 'sha256', strtolower( preg_replace( '/\s+/', '', $order->get_billing_city() ) ) );
+		if ( $order->get_billing_state() )    $extra_user_data['st']      = hash( 'sha256', strtolower( $order->get_billing_state() ) );
+		if ( $order->get_billing_postcode() ) $extra_user_data['zp']      = hash( 'sha256', strtolower( preg_replace( '/\s+/', '', $order->get_billing_postcode() ) ) );
+		if ( $order->get_billing_country() )  $extra_user_data['country'] = hash( 'sha256', strtolower( $order->get_billing_country() ) );
+		if ( $order->get_customer_id() )      $extra_user_data['external_id'] = hash( 'sha256', (string) $order->get_customer_id() );
+
+		$content_ids = [];
+		$contents = [];
+		foreach ( $order->get_items() as $item ) {
+			$product = $item->get_product();
+			$id = (string) ( $product ? ( $product->get_sku() ?: $product->get_id() ) : $item->get_product_id() );
+			$qty = max( 1, (int) $item->get_quantity() );
+			$content_ids[] = $id;
+			$contents[] = [
+				'id'         => $id,
+				'quantity'   => $qty,
+				'item_price' => (float) $item->get_total() / $qty,
+			];
+		}
+
+		$event_data = $this->get_advanced_custom_data([
+			'content_ids'   => array_values( array_unique( $content_ids ) ),
+			'content_type'  => 'product',
+			'contents'      => $contents,
+			'value'         => (float) $order->get_total(),
+			'currency'      => $order->get_currency(),
+			'num_items'     => $order->get_item_count(),
+			'order_id'      => (string) $order_id,
+		]);
+
+		$this->build_and_send_event( 'Purchase', $this->get_common_user_data( $extra_user_data ), $event_data, $event_id, $print_html, $order->get_checkout_order_received_url() );
+		update_post_meta( $order_id, '_mpc_purchase_tracked', true );
+
+		if ( function_exists('WC') && isset( WC()->session ) ) {
+			WC()->session->set( 'mpc_checkout_user_data', null );
+		}
+	}
+
+	private function build_and_send_event( $event_name, $user_data, $custom_data, $event_id, $print_html = true, $event_source_url = '' ) {
+		$token = get_option( 'mpc_capi_token' );
+		$pixel_id = get_option( 'mpc_pixel_id' );
+		if ( ! $token || ! $pixel_id ) return;
+
+		$payload = [
+			'data' => [
+				[
+					'event_name' => $event_name,
+					'event_time' => time(),
+					'action_source' => 'website',
+					'event_id' => $event_id,
+					'event_source_url' => $event_source_url ?: $this->current_url(),
+					'user_data' => $user_data,
+					'custom_data' => $custom_data,
+				]
+			]
+		];
+
+		$test_code = get_option( 'mpc_test_code' );
+		if ( $test_code ) {
+			$payload['test_event_code'] = $test_code;
+		}
+
+		$this->send_request( $pixel_id, $token, $payload );
+
+		if ( $print_html ) {
+			$json_data = esc_attr( wp_json_encode( $custom_data ) );
+			echo "<div class='mpc-ajax-event' data-event-name='" . esc_attr( $event_name ) . "' data-event-id='" . esc_attr( $event_id ) . "' data-event-data='{$json_data}' style='display:none;'></div>";
+		}
+	}
+
+	private function send_request( $pixel_id, $token, $payload ) {
+		$url = "https://graph.facebook.com/v19.0/{$pixel_id}/events?access_token={$token}";
+		
+		$response = wp_remote_post( $url, [
+			'body'    => wp_json_encode( $payload ),
+			'headers' => [ 'Content-Type' => 'application/json' ],
+			'timeout' => 15,
+			'blocking' => false,
+		] );
+
+		if ( is_wp_error( $response ) ) {
+			RetryQueue::add_to_queue( $payload );
+		} else {
+			$code = wp_remote_retrieve_response_code( $response );
+			if ( $code !== 200 ) {
+				RetryQueue::add_to_queue( $payload );
+			}
+			$this->log_event( $payload['data'][0], $code, wp_remote_retrieve_body( $response ) );
+		}
+	}
+
+	private function log_event( $event_data, $status, $response ) {
+		global $wpdb;
+		$wpdb->insert(
+			"{$wpdb->prefix}mpc_event_logs",
+			[
+				'event_name' => $event_data['event_name'],
+				'event_id' => $event_data['event_id'],
+				'event_type' => 'server',
+				'status' => $status,
+				'response' => $response,
+			]
+		);
+	}
+}
