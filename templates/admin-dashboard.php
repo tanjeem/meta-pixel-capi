@@ -297,6 +297,7 @@
 					<div class="mpc-card-body">
 						<p style="color: var(--mpc-text-muted); margin-top: 0; font-size: .85rem;">Manually trigger the failed-event retry queue or clear old logs.</p>
 						<div style="display: flex; gap: 10px; flex-wrap: wrap;">
+							<a href="<?php echo esc_url( admin_url('update-core.php?force-check=1') ); ?>" class="mpc-btn mpc-btn-sm mpc-btn-outline" style="text-decoration: none; display: flex; align-items: center;">Check for Plugin Updates</a>
 							<button type="button" class="mpc-btn mpc-btn-sm mpc-btn-outline" id="mpc-retry-now">Retry Failed Events</button>
 							<button type="button" class="mpc-btn mpc-btn-sm mpc-btn-outline mpc-btn-danger" id="mpc-clear-logs">Clear All Logs</button>
 						</div>
