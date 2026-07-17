@@ -70,6 +70,7 @@ class AdminMenu {
 		// WooCommerce Rules
 		update_option( 'mpc_purchase_status_filter', isset( $_POST['mpc_purchase_status_filter'] ) ? 1 : 0 );
 		update_option( 'mpc_enable_ltv', isset( $_POST['mpc_enable_ltv'] ) ? 1 : 0 );
+		update_option( 'mpc_enable_acr', isset( $_POST['mpc_enable_acr'] ) ? 1 : 0 );
 
 		// Cart Recovery
 		update_option( 'mpc_enable_abandoned_cart', isset( $_POST['mpc_enable_abandoned_cart'] ) ? 1 : 0 );

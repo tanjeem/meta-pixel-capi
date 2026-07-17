@@ -502,7 +502,7 @@ class Capi {
 			'is_new_customer' => $is_new_customer,
 		] );
 
-		$this->queue_event( 'Purchase', $this->get_common_user_data( $extra_user_data ), $event_data, $event_id, $print_html, $order->get_checkout_order_received_url() );
+		$this->queue_event( 'Purchase', $this->get_common_user_data( $extra_user_data ), $event_data, $event_id, $print_html, $order->get_checkout_order_received_url(), $order_id );
 		update_post_meta( $order_id, '_mpc_purchase_tracked', true );
 
 		// Clear checkout session PII
@@ -562,7 +562,7 @@ class Capi {
 	 * Queue an event for batch dispatch. Registers a shutdown hook on first call
 	 * so all events on this page load are bundled into ONE API request.
 	 */
-	private function queue_event( $event_name, $user_data, $custom_data, $event_id, $print_html = true, $event_source_url = '' ) {
+	private function queue_event( $event_name, $user_data, $custom_data, $event_id, $print_html = true, $event_source_url = '', $order_id = 0 ) {
 		$token    = get_option( 'mpc_capi_token' );
 		$pixel_id = get_option( 'mpc_pixel_id' );
 		if ( ! $token || ! $pixel_id ) return;
@@ -579,6 +579,7 @@ class Capi {
 			'event_source_url' => $event_source_url ?: $this->current_url(),
 			'user_data'        => $user_data,
 			'custom_data'      => $custom_data,
+			'_order_id'        => $order_id,
 		];
 
 		if ( ! $this->shutdown_registered ) {
@@ -610,9 +611,12 @@ class Capi {
 			$log_ids = [];
 			$api_data = [];
 
+			$order_ids_to_flag = [];
+
 			foreach ( $chunk as $ev ) {
 				if ( ! empty( $ev['log_id'] ) ) $log_ids[] = (int) $ev['log_id'];
-				unset( $ev['log_id'] );
+				if ( ! empty( $ev['_order_id'] ) ) $order_ids_to_flag[] = (int) $ev['_order_id'];
+				unset( $ev['log_id'], $ev['_order_id'] );
 				$api_data[] = $ev;
 			}
 
@@ -642,6 +646,12 @@ class Capi {
 					$body = wp_remote_retrieve_body( $response );
 				}
 				$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->prefix}mpc_event_logs SET status = %d, response = %s WHERE id IN ($ids_str)", $status, $body ) );
+				
+				if ( $status == 200 && ! empty( $order_ids_to_flag ) ) {
+					foreach ( $order_ids_to_flag as $oid ) {
+						update_post_meta( $oid, '_mpc_capi_sent', 1 );
+					}
+				}
 			}
 		}
 

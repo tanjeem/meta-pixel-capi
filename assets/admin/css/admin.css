@@ -1,23 +1,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-	--mpc-bg: #0a0e1a;
-	--mpc-surface: rgba(22, 28, 45, 0.85);
-	--mpc-surface-2: rgba(30, 38, 60, 0.6);
-	--mpc-border: rgba(255, 255, 255, 0.08);
-	--mpc-border-hover: rgba(255, 255, 255, 0.15);
-	--mpc-primary: #6366f1;
-	--mpc-primary-hover: #4f46e5;
-	--mpc-primary-glow: rgba(99, 102, 241, 0.25);
-	--mpc-text: #f1f5f9;
-	--mpc-text-muted: #94a3b8;
-	--mpc-text-dim: #64748b;
-	--mpc-success: #22c55e;
-	--mpc-warning: #f59e0b;
-	--mpc-danger: #ef4444;
-	--mpc-info: #3b82f6;
-	--mpc-radius: 12px;
-	--mpc-radius-lg: 16px;
+	--mpc-bg: #f9fafb;
+	--mpc-surface: #ffffff;
+	--mpc-surface-2: #f3f4f6;
+	--mpc-border: #e5e7eb;
+	--mpc-border-hover: #d1d5db;
+	--mpc-primary: #111827;
+	--mpc-primary-hover: #000000;
+	--mpc-primary-glow: rgba(0, 0, 0, 0.05);
+	--mpc-text: #111827;
+	--mpc-text-muted: #4b5563;
+	--mpc-text-dim: #6b7280;
+	--mpc-success: #16a34a;
+	--mpc-warning: #d97706;
+	--mpc-danger: #dc2626;
+	--mpc-info: #2563eb;
+	--mpc-radius: 6px;
+	--mpc-radius-lg: 8px;
 }
 
 /* ── Reset WP Chrome ── */
@@ -31,7 +31,7 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 
 /* ── Layout ── */
 .mpc-wrap {
-	max-width: 1100px;
+	max-width: 1000px;
 	margin: 30px auto;
 	padding: 0 24px;
 }
@@ -39,17 +39,14 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 /* ── Header ── */
 .mpc-header {
 	text-align: center;
-	padding: 30px 0 10px;
-	animation: mpc-slideDown .5s ease-out;
+	padding: 20px 0 20px;
+	animation: mpc-slideDown .4s ease-out;
 }
 .mpc-header h1 {
-	font-size: 2rem;
+	font-size: 1.8rem;
 	font-weight: 800;
 	margin: 0 0 6px;
-	background: linear-gradient(135deg, #818cf8, #c084fc, #f472b6);
-	-webkit-background-clip: text;
-	-webkit-text-fill-color: transparent;
-	background-clip: text;
+	color: var(--mpc-text);
 }
 .mpc-header p {
 	color: var(--mpc-text-muted);
@@ -65,9 +62,9 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 	border: 1px solid var(--mpc-border);
 	border-radius: var(--mpc-radius);
 	padding: 4px;
-	margin-bottom: 28px;
+	margin-bottom: 24px;
 	overflow-x: auto;
-	animation: mpc-fadeIn .6s ease-out;
+	animation: mpc-fadeIn .4s ease-out;
 }
 .mpc-tab-btn {
 	flex: 1;
@@ -79,46 +76,47 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 	font-family: inherit;
 	font-size: .85rem;
 	font-weight: 600;
-	border-radius: 8px;
+	border-radius: 4px;
 	cursor: pointer;
-	transition: all .25s ease;
+	transition: all .2s ease;
 	white-space: nowrap;
 }
 .mpc-tab-btn:hover {
 	color: var(--mpc-text);
-	background: rgba(255,255,255,0.05);
+	background: var(--mpc-surface-2);
 }
 .mpc-tab-btn.active {
-	background: var(--mpc-primary);
-	color: #fff;
-	box-shadow: 0 2px 8px var(--mpc-primary-glow);
+	background: var(--mpc-surface-2);
+	color: var(--mpc-text);
+	box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 
 /* ── Tab Panels ── */
-.mpc-tab-panel { display: none; animation: mpc-fadeIn .4s ease-out; }
+.mpc-tab-panel { display: none; animation: mpc-fadeIn .3s ease-out; }
 .mpc-tab-panel.active { display: block; }
 
-/* ── Glass Cards ── */
+/* ── Cards ── */
 .mpc-card {
 	background: var(--mpc-surface);
-	backdrop-filter: blur(16px);
-	-webkit-backdrop-filter: blur(16px);
 	border: 1px solid var(--mpc-border);
 	border-radius: var(--mpc-radius-lg);
 	margin-bottom: 20px;
-	transition: border-color .3s ease;
+	box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+	transition: border-color .2s ease;
 }
 .mpc-card:hover { border-color: var(--mpc-border-hover); }
 .mpc-card-head {
-	padding: 18px 24px;
+	padding: 16px 20px;
 	border-bottom: 1px solid var(--mpc-border);
 	display: flex; align-items: center; gap: 10px;
+	background: var(--mpc-surface);
+	border-radius: var(--mpc-radius-lg) var(--mpc-radius-lg) 0 0;
 }
 .mpc-card-head h3 {
-	margin: 0; font-size: 1.05rem; font-weight: 700; color: #fff;
+	margin: 0; font-size: 1rem; font-weight: 700; color: var(--mpc-text);
 }
-.mpc-card-head .dashicons { color: var(--mpc-primary); font-size: 20px; }
-.mpc-card-body { padding: 24px; }
+.mpc-card-head .dashicons { color: var(--mpc-text-muted); font-size: 20px; }
+.mpc-card-body { padding: 20px; }
 
 /* ── Two-column grid inside tabs ── */
 .mpc-two-col {
@@ -150,14 +148,14 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 .mpc-field textarea,
 .mpc-field select {
 	width: 100%;
-	background: rgba(10, 14, 26, 0.5);
+	background: var(--mpc-surface);
 	border: 1px solid var(--mpc-border);
-	color: #fff;
-	padding: 10px 14px;
-	border-radius: 8px;
+	color: var(--mpc-text);
+	padding: 10px 12px;
+	border-radius: var(--mpc-radius);
 	font-family: inherit;
 	font-size: .9rem;
-	transition: border-color .3s, box-shadow .3s;
+	transition: border-color .2s, box-shadow .2s;
 	box-sizing: border-box;
 }
 .mpc-field input:focus,
@@ -165,7 +163,7 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 .mpc-field select:focus {
 	outline: none;
 	border-color: var(--mpc-primary);
-	box-shadow: 0 0 0 3px var(--mpc-primary-glow);
+	box-shadow: 0 0 0 2px var(--mpc-primary-glow);
 }
 
 /* ── Toggle Switch ── */
@@ -174,16 +172,16 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 	align-items: center;
 	justify-content: space-between;
 	padding: 12px 16px;
-	background: var(--mpc-surface-2);
+	background: var(--mpc-surface);
 	border: 1px solid var(--mpc-border);
-	border-radius: 10px;
-	margin-bottom: 10px;
-	transition: border-color .3s;
+	border-radius: var(--mpc-radius);
+	margin-bottom: 8px;
+	transition: border-color .2s;
 }
 .mpc-switch:hover { border-color: var(--mpc-border-hover); }
 .mpc-switch-label {
 	font-size: .88rem;
-	font-weight: 500;
+	font-weight: 600;
 	color: var(--mpc-text);
 }
 .mpc-switch-label small {
@@ -195,7 +193,7 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 }
 .mpc-toggle-track {
 	position: relative;
-	width: 44px; height: 24px;
+	width: 40px; height: 22px;
 	cursor: pointer;
 	flex-shrink: 0;
 }
@@ -203,66 +201,41 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 .mpc-toggle-slider {
 	position: absolute;
 	inset: 0;
-	background: rgba(255,255,255,0.12);
+	background: var(--mpc-border);
 	border-radius: 999px;
-	transition: background .3s;
+	transition: background .2s;
 }
 .mpc-toggle-slider::after {
 	content: '';
 	position: absolute;
-	left: 3px; top: 3px;
+	left: 2px; top: 2px;
 	width: 18px; height: 18px;
 	background: #fff;
 	border-radius: 50%;
-	transition: transform .3s;
+	transition: transform .2s;
+	box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 .mpc-toggle-track input:checked + .mpc-toggle-slider {
-	background: var(--mpc-success);
+	background: var(--mpc-primary);
 }
 .mpc-toggle-track input:checked + .mpc-toggle-slider::after {
-	transform: translateX(20px);
+	transform: translateX(18px);
 }
 
 /* ── Status Badges ── */
 .mpc-badge {
 	display: inline-block;
-	padding: 3px 10px;
-	border-radius: 999px;
+	padding: 4px 8px;
+	border-radius: 4px;
 	font-size: .75rem;
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: .5px;
 }
-.mpc-badge-ok { background: rgba(34,197,94,.15); color: var(--mpc-success); }
-.mpc-badge-warn { background: rgba(245,158,11,.15); color: var(--mpc-warning); }
-.mpc-badge-danger { background: rgba(239,68,68,.15); color: var(--mpc-danger); }
-.mpc-badge-info { background: rgba(59,130,246,.15); color: var(--mpc-info); }
-
-/* ── Status Grid ── */
-.mpc-status-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-	gap: 14px;
-}
-.mpc-status-item {
-	background: var(--mpc-surface-2);
-	border: 1px solid var(--mpc-border);
-	border-radius: 10px;
-	padding: 16px;
-	text-align: center;
-}
-.mpc-status-item .label {
-	font-size: .78rem;
-	color: var(--mpc-text-dim);
-	text-transform: uppercase;
-	letter-spacing: .5px;
-	margin-bottom: 6px;
-}
-.mpc-status-item .value {
-	font-size: 1rem;
-	font-weight: 700;
-	color: #fff;
-}
+.mpc-badge-ok { background: #dcfce7; color: var(--mpc-success); }
+.mpc-badge-warn { background: #fef3c7; color: var(--mpc-warning); }
+.mpc-badge-danger { background: #fee2e2; color: var(--mpc-danger); }
+.mpc-badge-info { background: #dbeafe; color: var(--mpc-info); }
 
 /* ── Event Logs Table ── */
 .mpc-table-wrap {
@@ -276,47 +249,47 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 	font-size: .85rem;
 }
 .mpc-table thead th {
-	background: rgba(15, 20, 35, 0.8);
+	background: var(--mpc-surface-2);
 	color: var(--mpc-text-muted);
 	font-weight: 600;
 	text-transform: uppercase;
 	font-size: .75rem;
 	letter-spacing: .5px;
-	padding: 12px 16px;
+	padding: 10px 16px;
 	text-align: left;
 	border-bottom: 1px solid var(--mpc-border);
 }
 .mpc-table tbody td {
-	padding: 12px 16px;
+	padding: 10px 16px;
 	border-bottom: 1px solid var(--mpc-border);
 	color: var(--mpc-text);
-	vertical-align: top;
+	vertical-align: middle;
 }
 .mpc-table tbody tr:last-child td { border-bottom: none; }
-.mpc-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+.mpc-table tbody tr:hover { background: var(--mpc-surface-2); }
 
 /* ── Data Validator Chips ── */
-.mpc-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.mpc-chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
 .mpc-chip {
 	display: inline-flex;
 	align-items: center;
 	gap: 4px;
-	padding: 3px 8px;
-	border-radius: 6px;
+	padding: 2px 6px;
+	border-radius: 4px;
 	font-size: .72rem;
 	font-weight: 600;
 }
-.mpc-chip-ok { background: rgba(34,197,94,.12); color: var(--mpc-success); }
-.mpc-chip-miss { background: rgba(239,68,68,.12); color: var(--mpc-danger); }
+.mpc-chip-ok { background: #dcfce7; color: var(--mpc-success); }
+.mpc-chip-miss { background: #fee2e2; color: var(--mpc-danger); }
 
 /* ── Copy box ── */
 .mpc-copy-box {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	background: rgba(0,0,0,0.3);
-	padding: 10px 14px;
-	border-radius: 8px;
+	background: var(--mpc-surface-2);
+	padding: 8px 12px;
+	border-radius: var(--mpc-radius);
 	border: 1px solid var(--mpc-border);
 	cursor: pointer;
 	transition: background .2s;
@@ -324,7 +297,7 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 	font-size: .85rem;
 	color: var(--mpc-text-muted);
 }
-.mpc-copy-box:hover { background: rgba(0,0,0,0.5); }
+.mpc-copy-box:hover { background: #e5e7eb; }
 .mpc-copy-box .dashicons { font-size: 16px; color: var(--mpc-text-dim); }
 
 /* ── Save Bar ── */
@@ -332,15 +305,15 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 	position: sticky;
 	bottom: 0;
 	background: var(--mpc-surface);
-	backdrop-filter: blur(16px);
 	border: 1px solid var(--mpc-border);
 	border-radius: var(--mpc-radius);
-	padding: 14px 24px;
+	padding: 14px 20px;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	margin-top: 28px;
 	z-index: 100;
+	box-shadow: 0 -4px 10px rgba(0,0,0,0.02);
 }
 .mpc-save-msg {
 	font-size: .85rem;
@@ -355,22 +328,18 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 	background: var(--mpc-primary) !important;
 	color: #fff !important;
 	border: none !important;
-	padding: 10px 24px !important;
-	border-radius: 8px !important;
+	padding: 8px 20px !important;
+	border-radius: var(--mpc-radius) !important;
 	font-size: .9rem !important;
 	font-weight: 600 !important;
 	font-family: inherit !important;
 	cursor: pointer !important;
-	transition: all .25s ease !important;
-	box-shadow: 0 2px 8px var(--mpc-primary-glow) !important;
-	text-shadow: none !important;
+	transition: all .2s ease !important;
 	height: auto !important;
 	line-height: 1.4 !important;
 }
 .mpc-btn:hover {
 	background: var(--mpc-primary-hover) !important;
-	transform: translateY(-1px);
-	box-shadow: 0 4px 12px var(--mpc-primary-glow) !important;
 }
 .mpc-btn-sm {
 	padding: 6px 14px !important;
@@ -379,18 +348,17 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 .mpc-btn-outline {
 	background: transparent !important;
 	border: 1px solid var(--mpc-border) !important;
-	color: var(--mpc-text-muted) !important;
-	box-shadow: none !important;
+	color: var(--mpc-text) !important;
 }
 .mpc-btn-outline:hover {
 	border-color: var(--mpc-primary) !important;
-	color: var(--mpc-primary) !important;
-	background: rgba(99,102,241,.08) !important;
+	background: var(--mpc-surface-2) !important;
 }
 .mpc-btn-danger {
 	background: var(--mpc-danger) !important;
-	box-shadow: 0 2px 8px rgba(239,68,68,.25) !important;
+	color: #fff !important;
 }
+.mpc-btn-danger:hover { background: #b91c1c !important; }
 
 /* ── Empty State ── */
 .mpc-empty {
@@ -402,11 +370,11 @@ body.toplevel_page_mpc-settings #wpcontent { padding-left: 0; }
 
 /* ── Animations ── */
 @keyframes mpc-fadeIn {
-	from { opacity: 0; transform: translateY(12px); }
+	from { opacity: 0; transform: translateY(8px); }
 	to { opacity: 1; transform: translateY(0); }
 }
 @keyframes mpc-slideDown {
-	from { opacity: 0; transform: translateY(-16px); }
+	from { opacity: 0; transform: translateY(-8px); }
 	to { opacity: 1; transform: translateY(0); }
 }
 

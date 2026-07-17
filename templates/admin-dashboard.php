@@ -212,6 +212,10 @@
 							<div class="mpc-switch-label">Append Customer LTV Data<small>Attach lifetime_value, total_orders, and user_role to events.</small></div>
 							<label class="mpc-toggle-track"><input type="checkbox" name="mpc_enable_ltv" value="1" <?php checked(1, get_option('mpc_enable_ltv', 1)); ?>><span class="mpc-toggle-slider"></span></label>
 						</div>
+						<div class="mpc-switch">
+							<div class="mpc-switch-label">Automatic Conversion Recovery (ACR)<small>Nightly background job to push missed/failed orders to Meta.</small></div>
+							<label class="mpc-toggle-track"><input type="checkbox" name="mpc_enable_acr" value="1" <?php checked(1, get_option('mpc_enable_acr', 1)); ?>><span class="mpc-toggle-slider"></span></label>
+						</div>
 					</div>
 				</div>
 
