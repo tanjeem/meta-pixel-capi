@@ -180,10 +180,12 @@ class Capi {
 	}
 
 	public function send_page_view_event( $event_id ) {
+		if ( ! get_option('mpc_ev_pageview', 1) ) return;
 		$this->build_and_send_event( 'PageView', $this->get_common_user_data(), $this->get_advanced_custom_data(), $event_id, false );
 	}
 
 	public function send_view_category_event() {
+		if ( ! get_option('mpc_ev_viewcategory', 1) ) return;
 		if ( ! is_product_category() ) return;
 		$term = get_queried_object();
 		if ( ! $term ) return;
@@ -197,6 +199,7 @@ class Capi {
 	}
 
 	public function send_view_cart_event() {
+		if ( ! get_option('mpc_ev_viewcart', 1) ) return;
 		$event_id = Deduplication::generate_event_id();
 		$event_data = $this->get_advanced_custom_data([
 			'value' => (float) WC()->cart->get_total( 'edit' ),
@@ -206,6 +209,7 @@ class Capi {
 	}
 
 	public function send_remove_from_cart_event( $cart_item_key, $cart ) {
+		if ( ! get_option('mpc_ev_removecart', 1) ) return;
 		$removed_item = $cart->removed_cart_contents[ $cart_item_key ] ?? null;
 		if ( ! $removed_item ) return;
 		
@@ -234,6 +238,7 @@ class Capi {
 	}
 
 	public function send_view_content_event() {
+		if ( ! get_option('mpc_ev_viewcontent', 1) ) return;
 		global $product;
 		if ( ! $product ) return;
 
@@ -250,6 +255,7 @@ class Capi {
 	}
 
 	public function send_add_to_cart_event( $cart_item_key, $product_id, $quantity, $variation_id, $variation, $cart_item_data ) {
+		if ( ! get_option('mpc_ev_addtocart', 1) ) return;
 		$product = wc_get_product( $variation_id ?: $product_id );
 		if ( ! $product ) return;
 
@@ -324,6 +330,7 @@ class Capi {
 	}
 
 	public function send_initiate_checkout_event() {
+		if ( ! get_option('mpc_ev_checkout', 1) ) return;
 		if ( ! function_exists('is_checkout') || ! is_checkout() ) return;
 		if ( is_wc_endpoint_url('order-pay') || is_wc_endpoint_url('order-received') ) return;
 		if ( ! function_exists('WC') || is_null( WC()->cart ) || WC()->cart->is_empty() ) return;
@@ -363,6 +370,7 @@ class Capi {
 	}
 
 	private function do_purchase( $order_id, $print_html ) {
+		if ( ! get_option('mpc_ev_purchase', 1) ) return;
 		if ( ! $order_id || get_post_meta( $order_id, '_mpc_purchase_tracked', true ) ) return;
 		$order = wc_get_order( $order_id );
 		if ( ! $order ) return;
@@ -464,28 +472,31 @@ class Capi {
 			'body'    => wp_json_encode( $payload ),
 			'headers' => [ 'Content-Type' => 'application/json' ],
 			'timeout' => 15,
-			'blocking' => false,
+			'blocking' => true,
 		] );
 
 		if ( is_wp_error( $response ) ) {
 			RetryQueue::add_to_queue( $payload );
+			$this->log_event( $payload, 0, $response->get_error_message() );
 		} else {
 			$code = wp_remote_retrieve_response_code( $response );
 			if ( $code !== 200 ) {
 				RetryQueue::add_to_queue( $payload );
 			}
-			$this->log_event( $payload['data'][0], $code, wp_remote_retrieve_body( $response ) );
+			$this->log_event( $payload, $code, wp_remote_retrieve_body( $response ) );
 		}
 	}
 
-	private function log_event( $event_data, $status, $response ) {
+	private function log_event( $payload, $status, $response ) {
 		global $wpdb;
+		$event_data = $payload['data'][0] ?? [];
 		$wpdb->insert(
 			"{$wpdb->prefix}mpc_event_logs",
 			[
-				'event_name' => $event_data['event_name'],
-				'event_id' => $event_data['event_id'],
+				'event_name' => $event_data['event_name'] ?? 'unknown',
+				'event_id' => $event_data['event_id'] ?? '',
 				'event_type' => 'server',
+				'payload' => wp_json_encode( $payload ),
 				'status' => $status,
 				'response' => $response,
 			]

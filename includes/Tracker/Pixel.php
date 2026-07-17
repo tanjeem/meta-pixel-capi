@@ -22,6 +22,11 @@ class Pixel {
 		
 		// PageView event ID
 		$pageview_event_id = Deduplication::generate_event_id();
+
+		// Read toggle settings for JS
+		$enable_scroll = get_option( 'mpc_enable_scroll', 1 );
+		$enable_time   = get_option( 'mpc_enable_time_on_page', 1 );
+		$enable_outbound = get_option( 'mpc_enable_outbound', 1 );
 		
 		?>
 		<!-- Meta Pixel Code -->
@@ -56,14 +61,15 @@ class Pixel {
 		}
 		
 		function mpc_track_global_events() {
-			// UTM Parsing
+			// UTM Parsing (always active)
 			var urlParams = new URLSearchParams(window.location.search);
 			['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach(function(param) {
 				if (urlParams.has(param)) {
-					document.cookie = 'mpc_' + param + '=' + encodeURIComponent(urlParams.get(param)) + '; path=/; max-age=2592000'; // 30 days
+					document.cookie = 'mpc_' + param + '=' + encodeURIComponent(urlParams.get(param)) + '; path=/; max-age=2592000';
 				}
 			});
 
+			<?php if ( $enable_scroll ) : ?>
 			// Scroll Tracking
 			var scrolled50 = false, scrolled90 = false;
 			window.addEventListener('scroll', function() {
@@ -81,12 +87,16 @@ class Pixel {
 					fbq('trackCustom', 'ScrollDepth', { depth: 90 });
 				}
 			}, {passive: true});
+			<?php endif; ?>
 
+			<?php if ( $enable_time ) : ?>
 			// Time on Page (60s)
 			setTimeout(function() {
 				fbq('trackCustom', 'TimeOnPage', { seconds: 60 });
 			}, 60000);
+			<?php endif; ?>
 
+			<?php if ( $enable_outbound ) : ?>
 			// Outbound Links
 			document.addEventListener('click', function(e) {
 				var link = e.target.closest('a');
@@ -94,6 +104,7 @@ class Pixel {
 					fbq('trackCustom', 'OutboundClick', { url: link.href });
 				}
 			});
+			<?php endif; ?>
 		}
 
 		if (document.readyState === 'loading') {

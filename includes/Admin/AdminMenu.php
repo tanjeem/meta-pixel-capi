@@ -14,7 +14,9 @@ class AdminMenu {
 	private function __construct() {
 		add_action( 'admin_menu', [ $this, 'register_menus' ] );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
-		add_action( 'admin_init', [ $this, 'register_settings' ] );
+		add_action( 'wp_ajax_mpc_save_settings', [ $this, 'ajax_save_settings' ] );
+		add_action( 'wp_ajax_mpc_retry_queue', [ $this, 'ajax_retry_queue' ] );
+		add_action( 'wp_ajax_mpc_clear_logs', [ $this, 'ajax_clear_logs' ] );
 	}
 
 	public function register_menus() {
@@ -29,42 +31,66 @@ class AdminMenu {
 		);
 	}
 
-	public function register_settings() {
-		register_setting( 'mpc_settings_group', 'mpc_pixel_id' );
-		register_setting( 'mpc_settings_group', 'mpc_capi_token' );
-		register_setting( 'mpc_settings_group', 'mpc_test_code' );
-		register_setting( 'mpc_settings_group', 'mpc_blocked_phones' );
-		register_setting( 'mpc_settings_group', 'mpc_blocked_emails' );
-	}
-
 	public function enqueue_assets( $hook ) {
-		if ( $hook !== 'toplevel_page_mpc-settings' ) {
-			return;
-		}
-		if ( isset( $_POST['mpc_test_code'] ) ) {
-			update_option( 'mpc_pixel_id', sanitize_text_field( $_POST['mpc_pixel_id'] ) );
-			update_option( 'mpc_capi_token', sanitize_textarea_field( $_POST['mpc_capi_token'] ) );
-			update_option( 'mpc_test_code', sanitize_text_field( $_POST['mpc_test_code'] ) );
-			
-			// Fake Protection
-			update_option( 'mpc_enable_fake_protection', isset( $_POST['mpc_enable_fake_protection'] ) ? 1 : 0 );
-			
-			// Blocklist
-			update_option( 'mpc_blocklist_emails', sanitize_textarea_field( $_POST['mpc_blocklist_emails'] ?? '' ) );
-			update_option( 'mpc_blocklist_phones', sanitize_textarea_field( $_POST['mpc_blocklist_phones'] ?? '' ) );
-
-			// Cart Recovery
-			update_option( 'mpc_enable_abandoned_cart', isset( $_POST['mpc_enable_abandoned_cart'] ) ? 1 : 0 );
-			update_option( 'mpc_recovery_subject', sanitize_text_field( $_POST['mpc_recovery_subject'] ?? 'Complete your purchase' ) );
-			update_option( 'mpc_recovery_message', sanitize_textarea_field( $_POST['mpc_recovery_message'] ?? 'You left something in your cart! Click below to complete your order.' ) );
-
-			wp_send_json_success( ['message' => 'Settings saved successfully!'] );
-		}
+		if ( $hook !== 'toplevel_page_mpc-settings' ) return;
 		wp_enqueue_style( 'mpc-admin-css', MPC_PLUGIN_URL . 'assets/admin/css/admin.css', [], MPC_VERSION );
 		wp_enqueue_script( 'mpc-admin-js', MPC_PLUGIN_URL . 'assets/admin/js/admin.js', ['jquery'], MPC_VERSION, true );
 	}
 
 	public function render_settings_page() {
 		include MPC_PLUGIN_DIR . 'templates/admin-dashboard.php';
+	}
+
+	public function ajax_save_settings() {
+		if ( ! current_user_can('manage_options') ) wp_send_json_error();
+		check_ajax_referer( 'mpc_save_settings', 'mpc_nonce' );
+
+		// Core
+		update_option( 'mpc_pixel_id', sanitize_text_field( $_POST['mpc_pixel_id'] ?? '' ) );
+		update_option( 'mpc_capi_token', sanitize_textarea_field( $_POST['mpc_capi_token'] ?? '' ) );
+		update_option( 'mpc_test_code', sanitize_text_field( $_POST['mpc_test_code'] ?? '' ) );
+
+		// Pixel Behavioral
+		update_option( 'mpc_enable_scroll', isset( $_POST['mpc_enable_scroll'] ) ? 1 : 0 );
+		update_option( 'mpc_enable_time_on_page', isset( $_POST['mpc_enable_time_on_page'] ) ? 1 : 0 );
+		update_option( 'mpc_enable_outbound', isset( $_POST['mpc_enable_outbound'] ) ? 1 : 0 );
+
+		// Event Toggles
+		$events = [
+			'mpc_ev_pageview', 'mpc_ev_viewcontent', 'mpc_ev_viewcategory',
+			'mpc_ev_viewcart', 'mpc_ev_addtocart', 'mpc_ev_removecart',
+			'mpc_ev_checkout', 'mpc_ev_purchase'
+		];
+		foreach ( $events as $ev ) {
+			update_option( $ev, isset( $_POST[$ev] ) ? 1 : 0 );
+		}
+
+		// WooCommerce Rules
+		update_option( 'mpc_purchase_status_filter', isset( $_POST['mpc_purchase_status_filter'] ) ? 1 : 0 );
+		update_option( 'mpc_enable_ltv', isset( $_POST['mpc_enable_ltv'] ) ? 1 : 0 );
+
+		// Cart Recovery
+		update_option( 'mpc_enable_abandoned_cart', isset( $_POST['mpc_enable_abandoned_cart'] ) ? 1 : 0 );
+		update_option( 'mpc_recovery_subject', sanitize_text_field( $_POST['mpc_recovery_subject'] ?? 'Complete your purchase' ) );
+		update_option( 'mpc_recovery_message', sanitize_textarea_field( $_POST['mpc_recovery_message'] ?? '' ) );
+
+		// Blocklist
+		update_option( 'mpc_blocked_phones', sanitize_textarea_field( $_POST['mpc_blocked_phones'] ?? '' ) );
+		update_option( 'mpc_blocked_emails', sanitize_textarea_field( $_POST['mpc_blocked_emails'] ?? '' ) );
+
+		wp_send_json_success( ['message' => 'Settings saved successfully!'] );
+	}
+
+	public function ajax_retry_queue() {
+		if ( ! current_user_can('manage_options') ) wp_send_json_error();
+		\Mpc\Tracker\RetryQueue::get_instance()->process_queue();
+		wp_send_json_success( ['message' => 'Retry queue processed.'] );
+	}
+
+	public function ajax_clear_logs() {
+		if ( ! current_user_can('manage_options') ) wp_send_json_error();
+		global $wpdb;
+		$wpdb->query( "TRUNCATE TABLE {$wpdb->prefix}mpc_event_logs" );
+		wp_send_json_success( ['message' => 'All event logs cleared.'] );
 	}
 }

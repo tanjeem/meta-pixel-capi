@@ -16,6 +16,7 @@ class Activator {
 			event_name varchar(100) NOT NULL,
 			event_id varchar(150) NOT NULL,
 			event_type varchar(20) NOT NULL,
+			payload longtext NULL,
 			status varchar(50) NOT NULL,
 			response text NULL,
 			created_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
