@@ -29,6 +29,14 @@ class Pixel {
 			setcookie( '_fbp', $fbp, time() + 63072000, '/' );
 			$_COOKIE['_fbp'] = $fbp; // Make available immediately in this request
 		}
+
+		// Persistent first-party visitor id -> used as external_id for guests, so
+		// every event (not just logged-in users) carries a stable match key.
+		if ( ! isset( $_COOKIE['mpc_ext_id'] ) && ! headers_sent() ) {
+			$ext_id = bin2hex( random_bytes( 16 ) );
+			setcookie( 'mpc_ext_id', $ext_id, time() + 63072000, '/' );
+			$_COOKIE['mpc_ext_id'] = $ext_id;
+		}
 	}
 
 	public function inject_pixel_base() {

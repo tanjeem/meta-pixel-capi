@@ -53,6 +53,12 @@ class Capi {
 		// Block Checkout fires when the Store API initialises the cart data
 		add_action( 'woocommerce_store_api_cart_update_customer_from_request', [ $this, 'send_initiate_checkout_block' ], 20, 2 );
 
+		// ── Persist tracking ids onto the order at checkout ──────────
+		// So server-side Purchase re-sends (order-status hooks, recovery cron)
+		// still have fbp/fbc/external_id even without browser cookies.
+		add_action( 'woocommerce_checkout_create_order',                       [ $this, 'save_order_tracking_meta' ], 10, 1 );
+		add_action( 'woocommerce_store_api_checkout_update_order_from_request', [ $this, 'save_order_tracking_meta' ], 10, 1 );
+
 		// ── Purchase ─────────────────────────────────────────────────
 		add_action( 'woocommerce_thankyou',                    [ $this, 'send_purchase_event' ] );
 		add_action( 'woocommerce_order_status_processing',     [ $this, 'send_purchase_event_server_only' ] );
@@ -147,6 +153,22 @@ class Capi {
 		return $data;
 	}
 
+	/**
+	 * Store fbp / fbc / visitor-id onto the order while browser cookies are still
+	 * available, so server-side Purchase sends can attach them later. WooCommerce
+	 * saves the order after these creation hooks, so no explicit save() is needed.
+	 */
+	public function save_order_tracking_meta( $order ) {
+		if ( ! is_a( $order, 'WC_Order' ) ) return;
+
+		$fbp_fbc = $this->get_fbp_fbc();
+		if ( ! empty( $fbp_fbc['fbp'] ) ) $order->update_meta_data( '_mpc_fbp', $fbp_fbc['fbp'] );
+		if ( ! empty( $fbp_fbc['fbc'] ) ) $order->update_meta_data( '_mpc_fbc', $fbp_fbc['fbc'] );
+		if ( ! empty( $_COOKIE['mpc_ext_id'] ) ) {
+			$order->update_meta_data( '_mpc_ext_id', sanitize_text_field( $_COOKIE['mpc_ext_id'] ) );
+		}
+	}
+
 	private function get_common_user_data( $extra = [] ) {
 		$user_data = array_merge( [
 			'client_ip_address' => \WC_Geolocation::get_ip_address(),
@@ -159,6 +181,12 @@ class Capi {
 			if ( ! empty( $user->user_firstname ) )  $user_data['fn']          = hash( 'sha256', strtolower( trim( $user->user_firstname ) ) );
 			if ( ! empty( $user->user_lastname ) )   $user_data['ln']          = hash( 'sha256', strtolower( trim( $user->user_lastname ) ) );
 			$user_data['external_id'] = hash( 'sha256', (string) $user->ID );
+		}
+
+		// Guests: use the persistent first-party visitor id so external_id is
+		// present on nearly every event, not only for logged-in users.
+		if ( empty( $user_data['external_id'] ) && ! empty( $_COOKIE['mpc_ext_id'] ) ) {
+			$user_data['external_id'] = hash( 'sha256', sanitize_text_field( $_COOKIE['mpc_ext_id'] ) );
 		}
 
 		if ( function_exists('WC') && isset( WC()->session ) ) {
@@ -472,6 +500,17 @@ class Capi {
 		if ( $order->get_billing_postcode() )  $extra_user_data['zp']          = hash( 'sha256', strtolower( preg_replace( '/\s+/', '', $order->get_billing_postcode() ) ) );
 		if ( $order->get_billing_country() )   $extra_user_data['country']     = hash( 'sha256', strtolower( $order->get_billing_country() ) );
 		if ( $order->get_customer_id() )       $extra_user_data['external_id'] = hash( 'sha256', (string) $order->get_customer_id() );
+
+		// Recover fbp/fbc/visitor-id saved at checkout, so server-side sends
+		// (order-status hooks, recovery cron) keep these high-value match keys.
+		$saved_fbp = $order->get_meta( '_mpc_fbp' );
+		$saved_fbc = $order->get_meta( '_mpc_fbc' );
+		$saved_ext = $order->get_meta( '_mpc_ext_id' );
+		if ( $saved_fbp ) $extra_user_data['fbp'] = $saved_fbp;
+		if ( $saved_fbc ) $extra_user_data['fbc'] = $saved_fbc;
+		if ( $saved_ext && empty( $extra_user_data['external_id'] ) ) {
+			$extra_user_data['external_id'] = hash( 'sha256', $saved_ext );
+		}
 
 		$content_ids = [];
 		$contents    = [];

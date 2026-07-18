@@ -4,7 +4,7 @@ Tags: facebook pixel, conversions api, woocommerce, meta pixel, capi
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 2.0.0
+Stable tag: 2.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -73,6 +73,10 @@ No. Browser and server events share an `event_id` so Meta deduplicates them auto
 In Meta Events Manager, open your dataset/pixel, go to Settings → Conversions API → Generate access token.
 
 == Changelog ==
+
+= 2.1.0 =
+* Improved: Event Match Quality. fbp, fbc and a persistent first-party visitor id are now saved onto the order at checkout and re-attached to server-side Purchase sends (order-status hooks + recovery cron), so those events no longer lose fbp/fbc when browser cookies are unavailable.
+* Improved: external_id is now sent for guests too (via a persistent first-party visitor id), not only logged-in users — raising external_id coverage across all events.
 
 = 2.0.0 =
 * New: multi-platform tracking engine — Google Analytics 4, Google Ads, TikTok, Pinterest and Snapchat, each with browser pixel + server-side API, deduplicated by a shared event id.
