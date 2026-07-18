@@ -62,7 +62,14 @@ class Pixel {
 		t.src=v;s=b.getElementsByTagName(e)[0];
 		s.parentNode.insertBefore(t,s)}(window, document,'script',
 		'https://connect.facebook.net/en_US/fbevents.js');
+		<?php
+		$advanced_matching = Capi::get_instance()->get_pixel_advanced_matching();
+		if ( ! empty( $advanced_matching ) ) :
+		?>
+		fbq('init', '<?php echo esc_js( $pixel_id ); ?>', <?php echo wp_json_encode( $advanced_matching ); ?>);
+		<?php else : ?>
 		fbq('init', '<?php echo esc_js( $pixel_id ); ?>');
+		<?php endif; ?>
 
 		function mpc_start_meta() {
 			if (typeof fbq !== "function") { return; }

@@ -4,7 +4,7 @@ Tags: facebook pixel, conversions api, woocommerce, meta pixel, capi
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 2.1.0
+Stable tag: 2.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -73,6 +73,9 @@ No. Browser and server events share an `event_id` so Meta deduplicates them auto
 In Meta Events Manager, open your dataset/pixel, go to Settings → Conversions API → Generate access token.
 
 == Changelog ==
+
+= 2.2.0 =
+* Improved: Advanced Matching on the browser pixel. The Meta Pixel now sends hashed customer data (email, phone, name, city, state, ZIP, country, external id) in the browser too — previously only the server (CAPI) carried it, which halved the coverage of every customer parameter. On the thank-you page the full order is used for the richest Purchase match. Raw PII is never exposed — values are pre-hashed.
 
 = 2.1.0 =
 * Improved: Event Match Quality. fbp, fbc and a persistent first-party visitor id are now saved onto the order at checkout and re-attached to server-side Purchase sends (order-status hooks + recovery cron), so those events no longer lose fbp/fbc when browser cookies are unavailable.

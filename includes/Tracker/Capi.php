@@ -169,6 +169,61 @@ class Capi {
 		}
 	}
 
+	/**
+	 * Hashed Advanced Matching data for the browser pixel (fbq init).
+	 *
+	 * The browser event previously sent no PII, so every customer parameter was
+	 * only ~half-covered (server-only). Passing pre-hashed values here lets the
+	 * browser Purchase carry email/name/address too — without exposing raw PII in
+	 * the page source. On the thank-you page we use the full order for the richest
+	 * match.
+	 *
+	 * @return array
+	 */
+	public function get_pixel_advanced_matching() {
+		$am = [];
+
+		if ( is_user_logged_in() ) {
+			$user = wp_get_current_user();
+			if ( ! empty( $user->user_email ) )     $am['em'] = hash( 'sha256', strtolower( trim( $user->user_email ) ) );
+			if ( ! empty( $user->user_firstname ) )  $am['fn'] = hash( 'sha256', strtolower( trim( $user->user_firstname ) ) );
+			if ( ! empty( $user->user_lastname ) )   $am['ln'] = hash( 'sha256', strtolower( trim( $user->user_lastname ) ) );
+			$am['external_id'] = hash( 'sha256', (string) $user->ID );
+		}
+		if ( empty( $am['external_id'] ) && ! empty( $_COOKIE['mpc_ext_id'] ) ) {
+			$am['external_id'] = hash( 'sha256', sanitize_text_field( $_COOKIE['mpc_ext_id'] ) );
+		}
+
+		// Checkout PII captured into the session (already hashed).
+		if ( function_exists( 'WC' ) && isset( WC()->session ) ) {
+			$checkout = WC()->session->get( 'mpc_checkout_user_data', [] );
+			if ( is_array( $checkout ) ) $am = array_merge( $am, $checkout );
+		}
+
+		// Thank-you page: use the full order for the richest Purchase match.
+		if ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url( 'order-received' ) ) {
+			$order_id = absint( get_query_var( 'order-received' ) );
+			$order    = $order_id ? wc_get_order( $order_id ) : null;
+			if ( $order ) {
+				if ( $order->get_billing_email() )      $am['em']      = hash( 'sha256', strtolower( trim( $order->get_billing_email() ) ) );
+				if ( $order->get_billing_phone() )      $am['ph']      = hash( 'sha256', preg_replace( '/[^0-9]/', '', $order->get_billing_phone() ) );
+				if ( $order->get_billing_first_name() ) $am['fn']      = hash( 'sha256', strtolower( trim( $order->get_billing_first_name() ) ) );
+				if ( $order->get_billing_last_name() )  $am['ln']      = hash( 'sha256', strtolower( trim( $order->get_billing_last_name() ) ) );
+				if ( $order->get_billing_city() )       $am['ct']      = hash( 'sha256', strtolower( preg_replace( '/\s+/', '', $order->get_billing_city() ) ) );
+				if ( $order->get_billing_state() )      $am['st']      = hash( 'sha256', strtolower( $order->get_billing_state() ) );
+				if ( $order->get_billing_postcode() )   $am['zp']      = hash( 'sha256', strtolower( preg_replace( '/\s+/', '', $order->get_billing_postcode() ) ) );
+				if ( $order->get_billing_country() )    $am['country'] = hash( 'sha256', strtolower( $order->get_billing_country() ) );
+				if ( $order->get_customer_id() ) {
+					$am['external_id'] = hash( 'sha256', (string) $order->get_customer_id() );
+				} elseif ( $order->get_meta( '_mpc_ext_id' ) ) {
+					$am['external_id'] = hash( 'sha256', $order->get_meta( '_mpc_ext_id' ) );
+				}
+			}
+		}
+
+		return array_filter( $am );
+	}
+
 	private function get_common_user_data( $extra = [] ) {
 		$user_data = array_merge( [
 			'client_ip_address' => \WC_Geolocation::get_ip_address(),

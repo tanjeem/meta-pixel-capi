@@ -3,7 +3,7 @@
  * Plugin Name: Meta Pixel & CAPI Ultimate for WooCommerce
  * Plugin URI:  https://github.com/tanjeem/meta-pixel-capi
  * Description: Multi-platform server-side tracking for WooCommerce — Meta CAPI, GA4, Google Ads, TikTok, Pinterest & Snapchat with deduplication, consent gating, and fake-order protection.
- * Version:     2.1.0
+ * Version:     2.2.0
  * Author:      Tanzeem
  * Author URI:  https://github.com/tanjeem
  * Text Domain: meta-pixel-capi
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
 
-define( 'MPC_VERSION', '2.1.0' );
+define( 'MPC_VERSION', '2.2.0' );
 define( 'MPC_PLUGIN_FILE', __FILE__ );
 define( 'MPC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MPC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
