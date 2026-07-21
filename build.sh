@@ -37,6 +37,10 @@ rsync -a --delete \
 	--exclude '*.log' \
 	--exclude 'build.sh' \
 	--exclude 'README.md' \
+	--exclude 'composer.json' \
+	--exclude 'composer.lock' \
+	--exclude 'phpcs.xml.dist' \
+	--exclude 'vendor' \
 	--exclude "$SLUG.zip" \
 	"$ROOT/" "$STAGE/"
 
