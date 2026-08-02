@@ -36,11 +36,18 @@ class RecoveryCron {
 		$capi = Capi::get_instance();
 
 		foreach ( $orders as $order ) {
-			if ( $order->get_meta( '_mpc_capi_sent' ) ) continue;
+			// Only recover orders that were NEVER tracked — i.e. no Purchase was
+			// ever attempted (plugin off / token missing at purchase time).
+			//
+			// `_mpc_purchase_tracked` is set synchronously in the request the moment
+			// a Purchase is queued, so it is the reliable "already handled" marker.
+			// `_mpc_capi_sent` is written on shutdown and can silently fail to
+			// persist even on success — trusting it caused nightly re-sends and
+			// duplicate conversions. If either flag is present, skip.
+			if ( $order->get_meta( '_mpc_purchase_tracked' ) || $order->get_meta( '_mpc_capi_sent' ) ) {
+				continue;
+			}
 
-			// Clear the dedup flag so the purchase can be re-sent, then dispatch server-side.
-			$order->delete_meta_data( '_mpc_purchase_tracked' );
-			$order->save();
 			$capi->send_purchase_event_server_only( $order->get_id() );
 		}
 	}
