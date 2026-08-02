@@ -36,19 +36,42 @@ class RecoveryCron {
 		$capi = Capi::get_instance();
 
 		foreach ( $orders as $order ) {
-			// Only recover orders that were NEVER tracked — i.e. no Purchase was
-			// ever attempted (plugin off / token missing at purchase time).
-			//
-			// `_mpc_purchase_tracked` is set synchronously in the request the moment
-			// a Purchase is queued, so it is the reliable "already handled" marker.
-			// `_mpc_capi_sent` is written on shutdown and can silently fail to
-			// persist even on success — trusting it caused nightly re-sends and
-			// duplicate conversions. If either flag is present, skip.
-			if ( $order->get_meta( '_mpc_purchase_tracked' ) || $order->get_meta( '_mpc_capi_sent' ) ) {
+			// Recover only orders with NO confirmed successful Purchase send. This
+			// still catches genuine failures (attempted but never got a 2xx) while
+			// never re-sending a purchase Meta already received.
+			if ( $this->purchase_confirmed_sent( $order ) ) {
 				continue;
 			}
 
+			// Clear the in-request dedup guard so do_purchase will actually re-send
+			// (it early-returns when _mpc_purchase_tracked is set).
+			$order->delete_meta_data( '_mpc_purchase_tracked' );
+			$order->save();
 			$capi->send_purchase_event_server_only( $order->get_id() );
 		}
+	}
+
+	/**
+	 * Whether a successful (2xx) Purchase send is on record for this order.
+	 *
+	 * Uses the event-log table, whose status is written with a direct $wpdb query
+	 * (reliable on shutdown), rather than the `_mpc_capi_sent` order meta, whose
+	 * WooCommerce save can silently fail on shutdown and previously caused nightly
+	 * re-sends. The order-meta flag is still honoured as a fast path.
+	 */
+	private function purchase_confirmed_sent( $order ) {
+		if ( $order->get_meta( '_mpc_capi_sent' ) ) {
+			return true;
+		}
+
+		global $wpdb;
+		$event_id = Deduplication::get_order_event_id( $order->get_id() );
+		$count    = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->prefix}mpc_event_logs
+			 WHERE event_id = %s AND event_name = %s AND CAST(status AS UNSIGNED) BETWEEN 200 AND 299",
+			$event_id,
+			'Purchase'
+		) );
+		return $count > 0;
 	}
 }
