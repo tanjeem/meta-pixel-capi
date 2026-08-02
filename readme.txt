@@ -4,7 +4,7 @@ Tags: facebook pixel, conversions api, woocommerce, meta pixel, capi
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 2.2.0
+Stable tag: 2.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -73,6 +73,9 @@ No. Browser and server events share an `event_id` so Meta deduplicates them auto
 In Meta Events Manager, open your dataset/pixel, go to Settings → Conversions API → Generate access token.
 
 == Changelog ==
+
+= 2.2.1 =
+* Fixed: Purchase event_time (Meta "creationTime" diagnostic). Purchase events now use the order's actual creation time instead of the moment the event was sent, so server-side sends from order-status hooks and the recovery cron carry the correct timestamp and stay consistent across browser and server. event_time is clamped to Meta's valid range (not future, within 7 days).
 
 = 2.2.0 =
 * Improved: Advanced Matching on the browser pixel. The Meta Pixel now sends hashed customer data (email, phone, name, city, state, ZIP, country, external id) in the browser too — previously only the server (CAPI) carried it, which halved the coverage of every customer parameter. On the thank-you page the full order is used for the richest Purchase match. Raw PII is never exposed — values are pre-hashed.

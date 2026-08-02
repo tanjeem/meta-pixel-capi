@@ -611,7 +611,12 @@ class Capi {
 			'is_new_customer' => $is_new_customer,
 		] );
 
-		$this->queue_event( 'Purchase', $this->get_common_user_data( $extra_user_data ), $event_data, $event_id, $print_html, $order->get_checkout_order_received_url(), $order_id );
+		// Use the order's real creation time as event_time so every send for this
+		// order (thank-you, order-status hooks, recovery cron) is consistent and
+		// Meta's "creationTime" diagnostic is satisfied.
+		$order_time = $order->get_date_created() ? $order->get_date_created()->getTimestamp() : time();
+
+		$this->queue_event( 'Purchase', $this->get_common_user_data( $extra_user_data ), $event_data, $event_id, $print_html, $order->get_checkout_order_received_url(), $order_id, $order_time );
 		$order->update_meta_data( '_mpc_purchase_tracked', 1 );
 		$order->save();
 
@@ -672,7 +677,7 @@ class Capi {
 	 * Queue an event for batch dispatch. Registers a shutdown hook on first call
 	 * so all events on this page load are bundled into ONE API request.
 	 */
-	private function queue_event( $event_name, $user_data, $custom_data, $event_id, $print_html = true, $event_source_url = '', $order_id = 0 ) {
+	private function queue_event( $event_name, $user_data, $custom_data, $event_id, $print_html = true, $event_source_url = '', $order_id = 0, $event_time = 0 ) {
 		$token    = get_option( 'mpc_capi_token' );
 		$pixel_id = get_option( 'mpc_pixel_id' );
 		if ( ! $token || ! $pixel_id ) return;
@@ -680,13 +685,20 @@ class Capi {
 		// Respect GDPR consent (Meta is an advertising platform).
 		if ( ! \Mpc\Consent\ConsentManager::allows( 'marketing' ) ) return;
 
+		// Meta rejects event_time older than 7 days or in the future — clamp to a
+		// safe range so a real purchase timestamp is used but never invalid.
+		$now = time();
+		if ( $event_time <= 0 || $event_time > $now || $event_time < ( $now - 6 * DAY_IN_SECONDS ) ) {
+			$event_time = $now;
+		}
+
 		// Pre-log with status=pending immediately
 		$log_id = $this->log_event_pending( $event_name, $event_id, $custom_data, $user_data );
 
 		$this->event_queue[] = [
 			'log_id'           => $log_id,
 			'event_name'       => $event_name,
-			'event_time'       => time(),
+			'event_time'       => $event_time,
 			'action_source'    => 'website',
 			'event_id'         => $event_id,
 			'event_source_url' => $event_source_url ?: $this->current_url(),
