@@ -2,6 +2,9 @@
 namespace Mpc\Tracker;
 
 class RecoveryCron {
+	/** Stop recovering an order after this many failed sends. */
+	const MAX_RECOVERY_ATTEMPTS = 3;
+
 	private static $instance = null;
 
 	public static function get_instance() {
@@ -39,7 +42,7 @@ class RecoveryCron {
 			// Recover only orders with NO confirmed successful Purchase send. This
 			// still catches genuine failures (attempted but never got a 2xx) while
 			// never re-sending a purchase Meta already received.
-			if ( $this->purchase_confirmed_sent( $order ) ) {
+			if ( $this->should_skip( $order ) ) {
 				continue;
 			}
 
@@ -51,19 +54,33 @@ class RecoveryCron {
 	}
 
 	/**
-	 * Whether a successful (2xx) Purchase send is on record for this order.
+	 * Whether this order should be left alone by the recovery pass.
 	 *
-	 * Uses the event-log table, whose status is written with a direct $wpdb query
-	 * (reliable on shutdown), rather than the `_mpc_capi_sent` order meta, whose
-	 * WooCommerce save can silently fail on shutdown and previously caused nightly
-	 * re-sends. The order-meta flag is still honoured as a fast path.
+	 * True when delivery is already confirmed, OR when we have retried enough
+	 * times that continuing would just re-send nightly forever — the failure mode
+	 * that inflated reported conversions. Recovery is a safety net for a send that
+	 * never landed, not an unbounded retry loop.
 	 */
-	private function purchase_confirmed_sent( $order ) {
+	private function should_skip( $order ) {
 		if ( $order->get_meta( '_mpc_capi_sent' ) ) {
 			return true;
 		}
 
 		global $wpdb;
+
+		// Claim table: the authoritative delivery + attempt record.
+		$claim = $wpdb->get_row( $wpdb->prepare(
+			"SELECT delivered, attempts FROM {$wpdb->prefix}mpc_purchase_sent WHERE order_id = %d",
+			$order->get_id()
+		) );
+		if ( $claim ) {
+			if ( (int) $claim->delivered === 1 ) {
+				return true;
+			}
+			if ( (int) $claim->attempts >= self::MAX_RECOVERY_ATTEMPTS ) {
+				return true;
+			}
+		}
 		$event_id = Deduplication::get_order_event_id( $order->get_id() );
 		$count    = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM {$wpdb->prefix}mpc_event_logs

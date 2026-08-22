@@ -76,7 +76,8 @@ In Meta Events Manager, open your dataset/pixel, go to Settings → Conversions 
 
 = 2.2.4 =
 * Fixed: the browser pixel never fired Purchase, so Meta showed the event as "Conversions API" only with no pixel/CAPI redundancy. Payment gateways move an order to processing during the checkout request, so the order-status hook always ran before the thank-you page and set the shared dedup flag — making `woocommerce_thankyou` skip rendering the browser event. The browser copy now has its own once-per-order guard and shares the `order_<id>` event ID with the server send, so Meta deduplicates the pair and still counts the purchase exactly once.
-* Hardened: Purchase de-duplication no longer depends on the order-meta flag alone. The event-log row for the order's event_id is checked as a second, independent guard, so a missing or unsaved meta flag can no longer result in a duplicate conversion.
+* Fixed: duplicate Purchase conversions are now prevented by the database rather than by a flag. A new `mpc_purchase_sent` table keys on the order id, and a send is only made by the caller that wins an atomic INSERT IGNORE against it. No hook path, repeated page load, status transition or concurrent request can produce a second Purchase for the same order. The order-meta flag and event-log row remain as cheap fast paths ahead of the claim.
+* Fixed: Automatic Conversion Recovery is now bounded to 3 attempts per order and reads delivery state from the claim table, so an order whose send keeps failing is abandoned instead of being re-sent every night.
 * Changed: Automatic Conversion Recovery re-sends via an explicit `resend_purchase_event()` instead of deleting `_mpc_purchase_tracked`, which previously stripped the marker from orders whose send had actually succeeded.
 * Added: an `event_lookup (event_name, event_id)` index on the event log, which the new guard queries once per purchase.
 

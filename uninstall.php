@@ -67,6 +67,7 @@ foreach ( $options as $option ) {
 $tables = [
 	$wpdb->prefix . 'mpc_event_logs',
 	$wpdb->prefix . 'mpc_retry_queue',
+	$wpdb->prefix . 'mpc_purchase_sent',
 	$wpdb->prefix . 'mpc_abandoned_carts',
 ];
 foreach ( $tables as $table ) {

@@ -562,18 +562,23 @@ class Capi {
 			$this->print_browser_purchase( $order, $event_id );
 		}
 
-		// Dedup guard, checked in two layers.
+		$source = $force ? 'recovery_cron' : ( current_action() ?: 'direct' );
+
+		// Dedup guard.
 		//
-		// The order-meta flag is the fast path. The event-log row is a second,
-		// independent check against the same order_<id> event_id: queue_event()
-		// writes it with a direct synchronous $wpdb INSERT, so it still catches a
-		// re-send if the meta flag is ever missing — an order object that failed to
-		// save, meta stripped by a migration or another plugin, or an order
-		// restored from backup. Cheap (indexed on event_name, event_id) and it
-		// means no single storage path failing can cause a duplicate conversion.
+		// The two soft checks below are cheap fast paths, but neither is a
+		// guarantee: order meta can go missing and the event log can be truncated
+		// from the admin screen. The claim table is the real barrier — its PRIMARY
+		// KEY is the order id, so a second INSERT IGNORE for the same order affects
+		// 0 rows and this method returns. A duplicate Purchase send is therefore
+		// impossible from this plugin regardless of which hook fires, how many
+		// times, in how many concurrent requests, or in which order.
 		if ( ! $force ) {
 			if ( $order->get_meta( '_mpc_purchase_tracked' ) ) return;
 			if ( $this->purchase_already_queued( $event_id ) ) return;
+			if ( ! $this->claim_purchase_send( $order_id, $event_id, $source ) ) return;
+		} else {
+			$this->record_recovery_attempt( $order_id );
 		}
 
 		// Full order-based user data (most complete for EMQ)
@@ -621,6 +626,50 @@ class Capi {
 			WC()->session->set( 'mpc_checkout_user_data', null );
 			WC()->session->set( 'mpc_initiate_checkout_sent', null );
 		}
+	}
+
+	/**
+	 * Atomically claim the single permitted Purchase send for an order.
+	 *
+	 * `mpc_purchase_sent` has the order id as its PRIMARY KEY, so exactly one
+	 * caller can ever insert a row for a given order. INSERT IGNORE reports 1 row
+	 * affected for the winner and 0 for everyone after it — the check and the
+	 * write are one statement, so concurrent requests cannot both win.
+	 *
+	 * Fails OPEN: if the query errors (returns false) the table does not exist
+	 * yet, because dbDelta runs on the next admin page load after an upgrade. In
+	 * that window we must not block every purchase, so we defer to the soft
+	 * guards checked before this.
+	 *
+	 * @return bool True when this caller owns the send.
+	 */
+	private function claim_purchase_send( $order_id, $event_id, $source ) {
+		global $wpdb;
+		$claimed = $wpdb->query( $wpdb->prepare(
+			"INSERT IGNORE INTO {$wpdb->prefix}mpc_purchase_sent (order_id, event_id, source) VALUES (%d, %s, %s)",
+			$order_id,
+			$event_id,
+			$source
+		) );
+
+		if ( false === $claimed ) {
+			return true; // Table missing — fail open rather than drop every purchase.
+		}
+		return 1 === (int) $claimed;
+	}
+
+	/**
+	 * Count a recovery-cron re-send against the order's claim row so RecoveryCron
+	 * can stop retrying an order that keeps failing instead of sending nightly.
+	 */
+	private function record_recovery_attempt( $order_id ) {
+		global $wpdb;
+		$wpdb->query( $wpdb->prepare(
+			"INSERT INTO {$wpdb->prefix}mpc_purchase_sent (order_id, event_id, source) VALUES (%d, %s, 'recovery_cron')
+			 ON DUPLICATE KEY UPDATE attempts = attempts + 1, source = 'recovery_cron'",
+			$order_id,
+			Deduplication::get_order_event_id( $order_id )
+		) );
 	}
 
 	/**
@@ -856,7 +905,13 @@ class Capi {
 				}
 				$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->prefix}mpc_event_logs SET status = %d, response = %s WHERE id IN ($ids_str)", $status, $body ) );
 				
-				if ( $status == 200 && ! empty( $order_ids_to_flag ) ) {
+				if ( $status >= 200 && $status < 300 && ! empty( $order_ids_to_flag ) ) {
+					// Authoritative delivery record: a direct query that no order
+					// save can lose. RecoveryCron reads this to decide what still
+					// needs recovering.
+					$oids_str = implode( ',', array_map( 'intval', $order_ids_to_flag ) );
+					$wpdb->query( "UPDATE {$wpdb->prefix}mpc_purchase_sent SET delivered = 1 WHERE order_id IN ($oids_str)" );
+
 					foreach ( $order_ids_to_flag as $oid ) {
 						$flag_order = wc_get_order( $oid );
 						if ( $flag_order ) {
