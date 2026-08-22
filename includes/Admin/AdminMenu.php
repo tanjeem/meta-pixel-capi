@@ -21,6 +21,7 @@ class AdminMenu {
 		add_action( 'wp_ajax_mpc_fetch_logs_html', [ $this, 'ajax_fetch_logs_html' ] );
 		add_action( 'wp_ajax_mpc_purchase_audit', [ $this, 'ajax_purchase_audit' ] );
 		add_action( 'wp_ajax_mpc_export_diagnostics', [ $this, 'ajax_export_diagnostics' ] );
+		add_action( 'wp_ajax_mpc_conflict_scan', [ $this, 'ajax_conflict_scan' ] );
 	}
 
 	public function register_menus() {
@@ -274,6 +275,64 @@ class AdminMenu {
 	 * payloads (which hold hashed PII, IPs and user agents) and the access token
 	 * are never included, so the file is safe to hand to a third party.
 	 */
+	/**
+	 * Render the conflict scan: what else on this site sends events to Meta.
+	 */
+	public function ajax_conflict_scan() {
+		if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error();
+		check_ajax_referer( 'mpc_save_settings', 'mpc_nonce' );
+
+		$scan     = \Mpc\Diagnostics\ConflictScanner::scan();
+		$warnings = [];
+		$notes    = [];
+
+		foreach ( $scan['plugins'] as $p ) {
+			if ( $p['same_pixel'] ) {
+				$warnings[] = sprintf(
+					'<strong>%s</strong> is active and configured with the <strong>same Pixel ID</strong>. Both plugins are sending events to the same dataset — this double-counts every conversion.',
+					esc_html( $p['name'] )
+				);
+			} elseif ( $p['known_sender'] ) {
+				$warnings[] = sprintf(
+					'<strong>%s</strong> is active. It sends Meta events%s. Confirm it is not pointed at the same dataset.',
+					esc_html( $p['name'] ),
+					! empty( $p['sends_capi'] ) ? ' <em>including server-side (CAPI)</em>' : ''
+				);
+			} else {
+				$notes[] = sprintf( 'Possible tracking plugin active: <strong>%s</strong>.', esc_html( $p['name'] ) );
+			}
+		}
+
+		$r = $scan['rendered'];
+		if ( ! empty( $r['error'] ) ) {
+			$notes[] = 'Could not fetch the site HTML to check for extra pixels: ' . esc_html( $r['error'] );
+		}
+		if ( ! empty( $r['extra_pixel_ids'] ) ) {
+			$warnings[] = 'Extra Pixel ID(s) rendered on the site: <strong>' . esc_html( implode( ', ', $r['extra_pixel_ids'] ) ) . '</strong>. Something other than this plugin is putting a pixel on your pages.';
+		}
+		if ( ! empty( $r['duplicate_init_of_our_pixel'] ) ) {
+			$warnings[] = 'Your Pixel ID is initialised <strong>more than once per page</strong>. Browser events are firing twice.';
+		}
+		if ( ! empty( $r['gtm_containers'] ) ) {
+			$notes[] = 'Google Tag Manager container(s) detected: <strong>' . esc_html( implode( ', ', $r['gtm_containers'] ) ) . '</strong>. A GTM tag can send Meta events without appearing in the plugin list.';
+		}
+
+		$d = $scan['dataset'];
+		if ( ! empty( $d['error'] ) ) {
+			$notes[] = 'Dataset lookup: ' . esc_html( $d['error'] );
+		} elseif ( ! empty( $d['queried'] ) ) {
+			$notes[] = sprintf( 'Dataset <strong>%s</strong> (%s) reachable with the configured token.', esc_html( (string) $d['name'] ), esc_html( $scan['our_pixel_id'] ) );
+		}
+		$notes[] = esc_html( $d['note'] );
+
+		wp_send_json_success( [
+			'warnings' => $warnings,
+			'notes'    => $notes,
+			'clean'    => empty( $warnings ),
+			'raw'      => $scan,
+		] );
+	}
+
 	public function ajax_export_diagnostics() {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', '', [ 'response' => 403 ] );
 		check_ajax_referer( 'mpc_save_settings', 'mpc_nonce' );
@@ -398,6 +457,7 @@ class AdminMenu {
 			'orders_truncated'           => $orders_capped,
 			'purchase_audit'        => $audit,
 			'claims'                => $claims,
+			'conflict_scan'         => \Mpc\Diagnostics\ConflictScanner::scan(),
 		];
 
 		nocache_headers();

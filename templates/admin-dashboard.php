@@ -567,6 +567,22 @@
 		<div class="mpc-tab-panel" data-panel="logs">
 			<div class="mpc-card">
 				<div class="mpc-card-head">
+					<span class="dashicons dashicons-warning"></span>
+					<h3>Duplicate Source Scan</h3>
+				</div>
+				<div class="mpc-card-body">
+					<p style="color: var(--mpc-text-muted); margin-top: 0; font-size: .85rem;">If Meta reports more conversions than the Purchase Send Audit below accounts for, the extra events are coming from somewhere else. This checks for other plugins that send Meta events, extra Pixel IDs rendered on your pages, and tag managers that can fire Meta tags invisibly.</p>
+					<p style="margin: 0 0 12px;">
+						<button type="button" class="mpc-btn mpc-btn-sm mpc-btn-outline" id="mpc-conflict-scan">
+							<span class="dashicons dashicons-search" style="vertical-align: text-bottom;"></span> Scan for other Meta senders
+						</button>
+					</p>
+					<div id="mpc-conflict-results" style="font-size:.85rem;"></div>
+				</div>
+			</div>
+
+			<div class="mpc-card">
+				<div class="mpc-card-head">
 					<span class="dashicons dashicons-chart-bar"></span>
 					<h3>Purchase Send Audit</h3>
 				</div>

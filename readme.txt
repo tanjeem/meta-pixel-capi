@@ -4,7 +4,7 @@ Tags: facebook pixel, conversions api, woocommerce, meta pixel, capi
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 2.2.6
+Stable tag: 2.2.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -73,6 +73,11 @@ No. Browser and server events share an `event_id` so Meta deduplicates them auto
 In Meta Events Manager, open your dataset/pixel, go to Settings → Conversions API → Generate access token.
 
 == Changelog ==
+
+= 2.2.7 =
+* Added: **Duplicate Source Scan** on the Event Logs tab. If Meta reports more conversions than this plugin actually sent, the extra events come from somewhere else — this finds it. Checks active plugins known to send Meta events (flagging any configured with the same Pixel ID), fetches your real site HTML to catch extra `fbq('init')` calls from a theme, page builder or hard-coded snippet, and detects Google Tag Manager containers that can fire Meta tags without appearing in the plugin list. Results are included in the diagnostic export.
+* Added: event log pruning. The log previously had no retention at all and grew without limit — real installs reached hundreds of thousands of rows. A nightly pass now deletes ordinary events past a configurable window (default 30 days, set it to 0 to keep everything) in safe batches. Purchase events are exempt and kept for a year so the Purchase Send Audit keeps working.
+* Fixed: the diagnostic export counted only `processing` and `completed` orders, reporting zero orders on days that plainly had them — stores with a COD or courier workflow keep orders in custom statuses. It now reports all statuses, paid-only, and a per-status breakdown.
 
 = 2.2.6 =
 * Added: a **Download diagnostic export** button beside the Purchase Send Audit. Produces a JSON file putting real WooCommerce orders per day next to Purchase events actually sent per day, plus per-order send counts and statuses, claim rows, cron state and the environment (including both the site timezone and the database clock, which is what the event log's timestamps actually use). Contains no customer data and no access token — credentials appear only as booleans — so it is safe to share when asking for help.

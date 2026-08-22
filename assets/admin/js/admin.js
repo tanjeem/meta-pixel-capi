@@ -56,6 +56,35 @@ jQuery(document).ready(function($) {
 			$('#mpc-audit-summary').html(msg);
 		});
 	}
+	$(document).on('click', '#mpc-conflict-scan', function() {
+		var $btn = $(this), $out = $('#mpc-conflict-results');
+		$btn.prop('disabled', true);
+		$out.html('<p style="color:var(--mpc-text-dim);">Scanning active plugins and fetching your site HTML…</p>');
+		$.post(ajaxurl, {
+			action: 'mpc_conflict_scan',
+			mpc_nonce: $('#mpc-settings-form input[name="mpc_nonce"]').val()
+		}, function(res) {
+			$btn.prop('disabled', false);
+			if (!res.success) { $out.html('<p style="color:var(--mpc-danger);">Scan failed.</p>'); return; }
+			var d = res.data, html = '';
+			if (d.clean) {
+				html += '<p style="color:var(--mpc-success);"><strong>No other Meta sender found on this site.</strong> '
+				      + 'If Meta still reports more conversions than the audit below, the source is outside this site — '
+				      + 'a staging copy using the same Pixel ID, or a partner/CAPI Gateway integration on the dataset.</p>';
+			} else {
+				html += '<ul style="margin:0 0 12px; padding-left:18px;">';
+				d.warnings.forEach(function(w) { html += '<li style="color:var(--mpc-danger); margin-bottom:6px;">' + w + '</li>'; });
+				html += '</ul>';
+			}
+			if (d.notes.length) {
+				html += '<ul style="margin:0; padding-left:18px; color:var(--mpc-text-muted);">';
+				d.notes.forEach(function(n) { html += '<li style="margin-bottom:4px;">' + n + '</li>'; });
+				html += '</ul>';
+			}
+			$out.html(html);
+		});
+	});
+
 	$(document).on('click', '#mpc-export-diagnostics', function() {
 		var nonce = $('#mpc-settings-form input[name="mpc_nonce"]').val();
 		window.location = ajaxurl + '?action=mpc_export_diagnostics'
