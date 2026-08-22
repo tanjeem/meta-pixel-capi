@@ -43,11 +43,10 @@ class RecoveryCron {
 				continue;
 			}
 
-			// Clear the in-request dedup guard so do_purchase will actually re-send
-			// (it early-returns when _mpc_purchase_tracked is set).
-			$order->delete_meta_data( '_mpc_purchase_tracked' );
-			$order->save();
-			$capi->send_purchase_event_server_only( $order->get_id() );
+			// Re-send explicitly. Previously this deleted _mpc_purchase_tracked to
+			// slip past the guard; that also stripped the marker from orders whose
+			// send later succeeded, so the next pass recovered them all over again.
+			$capi->resend_purchase_event( $order->get_id() );
 		}
 	}
 

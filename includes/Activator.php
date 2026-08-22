@@ -20,7 +20,8 @@ class Activator {
 			status varchar(50) NOT NULL,
 			response text NULL,
 			created_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
-			PRIMARY KEY  (id)
+			PRIMARY KEY  (id),
+			KEY event_lookup (event_name,event_id)
 		) $charset_collate;
 		
 		CREATE TABLE {$wpdb->prefix}mpc_retry_queue (

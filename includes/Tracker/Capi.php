@@ -521,15 +521,23 @@ class Capi {
 		$this->do_purchase( $order_id, false );
 	}
 
-	private function do_purchase( $order_id, $print_html ) {
+	/**
+	 * Re-send a Purchase that has no successful delivery on record.
+	 *
+	 * Only for RecoveryCron, which does its own 2xx check against the event log
+	 * first. Bypasses the "already queued" guard — that is the whole point of a
+	 * recovery pass — but nothing else may call this.
+	 */
+	public function resend_purchase_event( $order_id ) {
+		$this->do_purchase( $order_id, false, true );
+	}
+
+	private function do_purchase( $order_id, $print_html, $force = false ) {
 		if ( ! get_option( 'mpc_ev_purchase', 1 ) ) return;
 		if ( ! $order_id ) return;
 
 		$order = wc_get_order( $order_id );
 		if ( ! $order ) return;
-
-		// HPOS-safe dedup guard: read the flag off the order object, not post meta.
-		if ( $order->get_meta( '_mpc_purchase_tracked' ) ) return;
 
 		// Advanced status filtering
 		if ( get_option( 'mpc_purchase_status_filter', 1 ) ) {
@@ -539,6 +547,34 @@ class Capi {
 		if ( apply_filters( 'mpc_block_purchase_event', false, $order ) ) return;
 
 		$event_id = Deduplication::get_order_event_id( $order_id );
+
+		// The browser pixel and the server send are guarded SEPARATELY.
+		//
+		// Gateways move the order to processing during the checkout request, so
+		// `woocommerce_order_status_processing` always fires before the shopper
+		// reaches the thank-you page. While one shared flag guarded both paths,
+		// that first server-side send set it and `woocommerce_thankyou` then
+		// early-returned — the browser Purchase was never rendered, and Meta
+		// reported Purchase as Conversions API only (no pixel/CAPI redundancy).
+		// Both paths carry the same `order_<id>` event_id, so Meta deduplicates
+		// the pair and the purchase is still counted exactly once.
+		if ( $print_html ) {
+			$this->print_browser_purchase( $order, $event_id );
+		}
+
+		// Dedup guard, checked in two layers.
+		//
+		// The order-meta flag is the fast path. The event-log row is a second,
+		// independent check against the same order_<id> event_id: queue_event()
+		// writes it with a direct synchronous $wpdb INSERT, so it still catches a
+		// re-send if the meta flag is ever missing — an order object that failed to
+		// save, meta stripped by a migration or another plugin, or an order
+		// restored from backup. Cheap (indexed on event_name, event_id) and it
+		// means no single storage path failing can cause a duplicate conversion.
+		if ( ! $force ) {
+			if ( $order->get_meta( '_mpc_purchase_tracked' ) ) return;
+			if ( $this->purchase_already_queued( $event_id ) ) return;
+		}
 
 		// Full order-based user data (most complete for EMQ)
 		$extra_user_data = [
@@ -567,6 +603,61 @@ class Capi {
 			$extra_user_data['external_id'] = hash( 'sha256', $saved_ext );
 		}
 
+		$event_data = $this->build_purchase_custom_data( $order );
+
+		// Use the order's real creation time as event_time so every send for this
+		// order (thank-you, order-status hooks, recovery cron) is consistent and
+		// Meta's "creationTime" diagnostic is satisfied.
+		$order_time = $order->get_date_created() ? $order->get_date_created()->getTimestamp() : time();
+
+		// $print_html is false here: the browser copy is rendered by
+		// print_browser_purchase() above, which has its own once-per-order guard.
+		$this->queue_event( 'Purchase', $this->get_common_user_data( $extra_user_data ), $event_data, $event_id, false, $order->get_checkout_order_received_url(), $order_id, $order_time );
+		$order->update_meta_data( '_mpc_purchase_tracked', 1 );
+		$order->save();
+
+		// Clear checkout session PII
+		if ( function_exists('WC') && isset( WC()->session ) ) {
+			WC()->session->set( 'mpc_checkout_user_data', null );
+			WC()->session->set( 'mpc_initiate_checkout_sent', null );
+		}
+	}
+
+	/**
+	 * Whether a Purchase send for this event_id was already recorded, in ANY
+	 * earlier request. Backed by the `event_lookup` index on the log table.
+	 */
+	private function purchase_already_queued( $event_id ) {
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->prefix}mpc_event_logs WHERE event_name = 'Purchase' AND event_id = %s",
+			$event_id
+		) ) > 0;
+	}
+
+	/**
+	 * Render the browser-pixel Purchase on the thank-you page.
+	 *
+	 * Emits the same `.mpc-ajax-event` marker the observer in Tracker\Pixel picks
+	 * up, using the order's event_id so the pixel and CAPI copies deduplicate.
+	 * Guarded by its own order meta so a thank-you page refresh never re-fires it.
+	 */
+	private function print_browser_purchase( $order, $event_id ) {
+		if ( ! get_option( 'mpc_pixel_id' ) ) return;
+		if ( $order->get_meta( '_mpc_purchase_pixel_printed' ) ) return;
+
+		$json_data = esc_attr( wp_json_encode( $this->build_purchase_custom_data( $order ) ) );
+		echo "<div class='mpc-ajax-event' data-event-name='Purchase' data-event-id='" . esc_attr( $event_id ) . "' data-event-data='{$json_data}' style='display:none;'></div>";
+
+		$order->update_meta_data( '_mpc_purchase_pixel_printed', 1 );
+		$order->save();
+	}
+
+	/**
+	 * Custom data for a Purchase, shared by the browser pixel and the CAPI send so
+	 * both copies of the event describe the identical order.
+	 */
+	private function build_purchase_custom_data( $order ) {
 		$content_ids = [];
 		$contents    = [];
 		foreach ( $order->get_items() as $item ) {
@@ -600,31 +691,16 @@ class Capi {
 			$is_new_customer = ( count( (array) $past_orders ) <= 1 );
 		}
 
-		$event_data = $this->get_advanced_custom_data( [
+		return $this->get_advanced_custom_data( [
 			'content_ids'     => array_values( array_unique( $content_ids ) ),
 			'content_type'    => 'product',
 			'contents'        => $contents,
 			'value'           => (float) $order->get_total(),
 			'currency'        => $order->get_currency(),
 			'num_items'       => $order->get_item_count(),
-			'order_id'        => (string) $order_id,
+			'order_id'        => (string) $order->get_id(),
 			'is_new_customer' => $is_new_customer,
 		] );
-
-		// Use the order's real creation time as event_time so every send for this
-		// order (thank-you, order-status hooks, recovery cron) is consistent and
-		// Meta's "creationTime" diagnostic is satisfied.
-		$order_time = $order->get_date_created() ? $order->get_date_created()->getTimestamp() : time();
-
-		$this->queue_event( 'Purchase', $this->get_common_user_data( $extra_user_data ), $event_data, $event_id, $print_html, $order->get_checkout_order_received_url(), $order_id, $order_time );
-		$order->update_meta_data( '_mpc_purchase_tracked', 1 );
-		$order->save();
-
-		// Clear checkout session PII
-		if ( function_exists('WC') && isset( WC()->session ) ) {
-			WC()->session->set( 'mpc_checkout_user_data', null );
-			WC()->session->set( 'mpc_initiate_checkout_sent', null );
-		}
 	}
 
 	// ═══════════════════════════════════════════════════════════

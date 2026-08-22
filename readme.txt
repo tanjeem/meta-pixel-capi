@@ -4,7 +4,7 @@ Tags: facebook pixel, conversions api, woocommerce, meta pixel, capi
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 2.2.3
+Stable tag: 2.2.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -73,6 +73,12 @@ No. Browser and server events share an `event_id` so Meta deduplicates them auto
 In Meta Events Manager, open your dataset/pixel, go to Settings → Conversions API → Generate access token.
 
 == Changelog ==
+
+= 2.2.4 =
+* Fixed: the browser pixel never fired Purchase, so Meta showed the event as "Conversions API" only with no pixel/CAPI redundancy. Payment gateways move an order to processing during the checkout request, so the order-status hook always ran before the thank-you page and set the shared dedup flag — making `woocommerce_thankyou` skip rendering the browser event. The browser copy now has its own once-per-order guard and shares the `order_<id>` event ID with the server send, so Meta deduplicates the pair and still counts the purchase exactly once.
+* Hardened: Purchase de-duplication no longer depends on the order-meta flag alone. The event-log row for the order's event_id is checked as a second, independent guard, so a missing or unsaved meta flag can no longer result in a duplicate conversion.
+* Changed: Automatic Conversion Recovery re-sends via an explicit `resend_purchase_event()` instead of deleting `_mpc_purchase_tracked`, which previously stripped the marker from orders whose send had actually succeeded.
+* Added: an `event_lookup (event_name, event_id)` index on the event log, which the new guard queries once per purchase.
 
 = 2.2.3 =
 * Improved: Automatic Conversion Recovery now decides whether an order still needs sending from the event log's real HTTP status (recorded via a reliable direct query) instead of the shutdown-written order flag. It recovers genuinely failed sends while never re-sending a purchase Meta already received — the full safety net without the duplicate conversions.
