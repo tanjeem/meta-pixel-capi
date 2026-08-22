@@ -15,6 +15,9 @@ namespace Mpc\Tracker;
  * - is_new_customer flag on Purchase events.
  */
 class Capi {
+	/** Stop recovering an order after this many failed sends. */
+	const MAX_RECOVERY_ATTEMPTS = 3;
+
 	private static $instance = null;
 
 	/** @var array Events queued for batch dispatch this request. */
@@ -573,12 +576,12 @@ class Capi {
 		// 0 rows and this method returns. A duplicate Purchase send is therefore
 		// impossible from this plugin regardless of which hook fires, how many
 		// times, in how many concurrent requests, or in which order.
-		if ( ! $force ) {
+		if ( $force ) {
+			if ( ! $this->claim_recovery_attempt( $order_id, $event_id ) ) return;
+		} else {
 			if ( $order->get_meta( '_mpc_purchase_tracked' ) ) return;
 			if ( $this->purchase_already_queued( $event_id ) ) return;
 			if ( ! $this->claim_purchase_send( $order_id, $event_id, $source ) ) return;
-		} else {
-			$this->record_recovery_attempt( $order_id );
 		}
 
 		// Full order-based user data (most complete for EMQ)
@@ -618,8 +621,21 @@ class Capi {
 		// $print_html is false here: the browser copy is rendered by
 		// print_browser_purchase() above, which has its own once-per-order guard.
 		$this->queue_event( 'Purchase', $this->get_common_user_data( $extra_user_data ), $event_data, $event_id, false, $order->get_checkout_order_received_url(), $order_id, $order_time );
-		$order->update_meta_data( '_mpc_purchase_tracked', 1 );
-		$order->save();
+		// Best-effort fast-path marker. This runs inside WC_Order::status_transition()
+		// on the order-status hooks, and WooCommerce wraps that hook in a try/catch
+		// that only logs — so an exception escaping here would silently abandon the
+		// rest of the transition (the status note, woocommerce_order_status_X_to_Y,
+		// woocommerce_order_status_changed) and break other plugins listening on it.
+		// Correctness does not depend on this write: the claim row above already
+		// prevents a second send.
+		try {
+			$order->update_meta_data( '_mpc_purchase_tracked', 1 );
+			$order->save();
+		} catch ( \Exception $e ) {
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				error_log( '[MPC] Could not persist _mpc_purchase_tracked for order ' . $order_id . ': ' . $e->getMessage() );
+			}
+		}
 
 		// Clear checkout session PII
 		if ( function_exists('WC') && isset( WC()->session ) ) {
@@ -659,17 +675,49 @@ class Capi {
 	}
 
 	/**
-	 * Count a recovery-cron re-send against the order's claim row so RecoveryCron
-	 * can stop retrying an order that keeps failing instead of sending nightly.
+	 * Atomically take one recovery retry slot for an order.
+	 *
+	 * RecoveryCron's own pre-check is advisory: WordPress serialises cron runs
+	 * with a 60-second transient lock, so a slow pass can be joined by a second
+	 * concurrent one that has already read the same "needs recovering" state.
+	 * Without this, both would re-send. Here the UPDATE itself does the deciding —
+	 * MySQL reports 1 changed row to exactly one caller — so concurrent passes
+	 * cannot both take the same slot.
+	 *
+	 * @return bool True when this caller may re-send.
 	 */
-	private function record_recovery_attempt( $order_id ) {
+	private function claim_recovery_attempt( $order_id, $event_id ) {
 		global $wpdb;
-		$wpdb->query( $wpdb->prepare(
-			"INSERT INTO {$wpdb->prefix}mpc_purchase_sent (order_id, event_id, source) VALUES (%d, %s, 'recovery_cron')
-			 ON DUPLICATE KEY UPDATE attempts = attempts + 1, source = 'recovery_cron'",
+
+		$taken = $wpdb->query( $wpdb->prepare(
+			"UPDATE {$wpdb->prefix}mpc_purchase_sent
+			 SET attempts = attempts + 1, source = 'recovery_cron'
+			 WHERE order_id = %d AND delivered = 0 AND attempts < %d",
 			$order_id,
-			Deduplication::get_order_event_id( $order_id )
+			self::MAX_RECOVERY_ATTEMPTS
 		) );
+
+		if ( false === $taken ) {
+			return true; // Table missing — fail open, as claim_purchase_send() does.
+		}
+		if ( 1 === (int) $taken ) {
+			return true;
+		}
+
+		// 0 rows changed means either the order has no claim row at all (it was
+		// never sent, so recovery is exactly right), or it is already delivered or
+		// out of attempts. INSERT IGNORE tells the two apart: it inserts only in
+		// the first case.
+		$created = $wpdb->query( $wpdb->prepare(
+			"INSERT IGNORE INTO {$wpdb->prefix}mpc_purchase_sent (order_id, event_id, source) VALUES (%d, %s, 'recovery_cron')",
+			$order_id,
+			$event_id
+		) );
+
+		if ( false === $created ) {
+			return true;
+		}
+		return 1 === (int) $created;
 	}
 
 	/**

@@ -2,9 +2,6 @@
 namespace Mpc\Tracker;
 
 class RecoveryCron {
-	/** Stop recovering an order after this many failed sends. */
-	const MAX_RECOVERY_ATTEMPTS = 3;
-
 	private static $instance = null;
 
 	public static function get_instance() {
@@ -77,7 +74,7 @@ class RecoveryCron {
 			if ( (int) $claim->delivered === 1 ) {
 				return true;
 			}
-			if ( (int) $claim->attempts >= self::MAX_RECOVERY_ATTEMPTS ) {
+			if ( (int) $claim->attempts >= Capi::MAX_RECOVERY_ATTEMPTS ) {
 				return true;
 			}
 		}

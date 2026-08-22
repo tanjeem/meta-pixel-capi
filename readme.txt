@@ -4,7 +4,7 @@ Tags: facebook pixel, conversions api, woocommerce, meta pixel, capi
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 2.2.4
+Stable tag: 2.2.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -73,6 +73,10 @@ No. Browser and server events share an `event_id` so Meta deduplicates them auto
 In Meta Events Manager, open your dataset/pixel, go to Settings → Conversions API → Generate access token.
 
 == Changelog ==
+
+= 2.2.5 =
+* Fixed: `do_purchase()` queued the Purchase and only afterwards wrote the `_mpc_purchase_tracked` marker via `$order->save()`. On the order-status hooks that save runs inside `WC_Order::status_transition()`, which WooCommerce wraps in a try/catch that only logs — so a failing save silently lost the marker while the event had already been queued and still sent. The thank-you page, the `completed` transition and the nightly recovery pass then each saw an untracked order and sent it again. The claim row taken in 2.2.4 already closed this; the marker write is now also wrapped so it can never abort the rest of the status transition and break other plugins listening on it.
+* Fixed: recovery re-sends are now claimed atomically. WordPress serialises cron with a 60-second transient lock, so a slow recovery pass could be joined by a second concurrent one that had already read the same state and re-sent the same orders. The retry slot is now taken by a conditional UPDATE that only one caller can win.
 
 = 2.2.4 =
 * Fixed: the browser pixel never fired Purchase, so Meta showed the event as "Conversions API" only with no pixel/CAPI redundancy. Payment gateways move an order to processing during the checkout request, so the order-status hook always ran before the thank-you page and set the shared dedup flag — making `woocommerce_thankyou` skip rendering the browser event. The browser copy now has its own once-per-order guard and shares the `order_<id>` event ID with the server send, so Meta deduplicates the pair and still counts the purchase exactly once.
