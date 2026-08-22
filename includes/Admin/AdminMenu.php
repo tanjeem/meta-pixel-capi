@@ -19,6 +19,7 @@ class AdminMenu {
 		add_action( 'wp_ajax_mpc_clear_logs', [ $this, 'ajax_clear_logs' ] );
 		add_action( 'wp_ajax_mpc_test_token', [ $this, 'ajax_test_token' ] );
 		add_action( 'wp_ajax_mpc_fetch_logs_html', [ $this, 'ajax_fetch_logs_html' ] );
+		add_action( 'wp_ajax_mpc_purchase_audit', [ $this, 'ajax_purchase_audit' ] );
 	}
 
 	public function register_menus() {
@@ -174,6 +175,93 @@ class AdminMenu {
 				wp_send_json_error( ['message' => esc_html( $error_msg )] );
 			}
 		}
+	}
+
+	/**
+	 * Purchase send audit.
+	 *
+	 * Answers one question directly: has any order had its Purchase sent to Meta
+	 * more than once? Reads the existing event log, so it covers history recorded
+	 * before this screen existed, and joins the claim table for the triggering
+	 * hook where that is available.
+	 */
+	public function ajax_purchase_audit() {
+		if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error();
+		check_ajax_referer( 'mpc_save_settings', 'mpc_nonce' );
+
+		global $wpdb;
+
+		$days = isset( $_POST['days'] ) ? max( 1, min( 90, (int) $_POST['days'] ) ) : 14;
+
+		// created_at is written by the database's own CURRENT_TIMESTAMP, so compare
+		// against NOW() — both are in the database server's timezone, which is not
+		// necessarily the site's.
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT event_id,
+			        COUNT(*) AS sends,
+			        SUM(CASE WHEN CAST(status AS UNSIGNED) BETWEEN 200 AND 299 THEN 1 ELSE 0 END) AS accepted,
+			        MIN(created_at) AS first_sent,
+			        MAX(created_at) AS last_sent
+			 FROM {$wpdb->prefix}mpc_event_logs
+			 WHERE event_name = 'Purchase' AND created_at >= DATE_SUB(NOW(), INTERVAL %d DAY)
+			 GROUP BY event_id
+			 ORDER BY sends DESC, MAX(created_at) DESC
+			 LIMIT 200",
+			$days
+		) );
+
+		$orders     = count( (array) $rows );
+		$total      = 0;
+		$duplicated = 0;
+		foreach ( (array) $rows as $r ) {
+			$total += (int) $r->sends;
+			if ( (int) $r->sends > 1 ) $duplicated++;
+		}
+
+		// Triggering hook per order, when the claim table is present (2.2.4+).
+		$sources    = [];
+		$claim_table = $wpdb->prefix . 'mpc_purchase_sent';
+		$has_claims  = ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $claim_table ) ) === $claim_table );
+		if ( $has_claims ) {
+			$claims = $wpdb->get_results( "SELECT order_id, source, attempts, delivered FROM {$claim_table}" );
+			foreach ( (array) $claims as $c ) {
+				$sources[ 'order_' . $c->order_id ] = $c;
+			}
+		}
+
+		ob_start();
+		if ( empty( $rows ) ) : ?>
+			<tr><td colspan="6" style="text-align:center; color: var(--mpc-text-dim); padding: 30px;">No Purchase events logged in this window.</td></tr>
+		<?php else :
+			foreach ( $rows as $r ) :
+				$dupe   = ( (int) $r->sends > 1 );
+				$claim  = $sources[ $r->event_id ] ?? null;
+				$source = $claim ? $claim->source : '—';
+		?>
+			<tr>
+				<td><strong><?php echo esc_html( $r->event_id ); ?></strong></td>
+				<td>
+					<?php if ( $dupe ) : ?>
+						<span class="mpc-badge mpc-badge-danger"><?php echo (int) $r->sends; ?> sends</span>
+					<?php else : ?>
+						<span class="mpc-badge mpc-badge-ok">1 send</span>
+					<?php endif; ?>
+				</td>
+				<td><?php echo (int) $r->accepted; ?></td>
+				<td style="font-size:.75rem; color: var(--mpc-text-dim);"><?php echo esc_html( $source ); ?></td>
+				<td style="font-size:.75rem;"><?php echo esc_html( $r->first_sent ); ?></td>
+				<td style="font-size:.75rem;"><?php echo esc_html( $r->last_sent ); ?></td>
+			</tr>
+		<?php endforeach; endif;
+		$html = ob_get_clean();
+
+		wp_send_json_success( [
+			'html'       => $html,
+			'orders'     => $orders,
+			'total'      => $total,
+			'duplicated' => $duplicated,
+			'days'       => $days,
+		] );
 	}
 
 	public function ajax_fetch_logs_html() {

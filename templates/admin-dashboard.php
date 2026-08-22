@@ -560,6 +560,39 @@
 		<div class="mpc-tab-panel" data-panel="logs">
 			<div class="mpc-card">
 				<div class="mpc-card-head">
+					<span class="dashicons dashicons-chart-bar"></span>
+					<h3>Purchase Send Audit</h3>
+				</div>
+				<div class="mpc-card-body">
+					<p style="color: var(--mpc-text-muted); margin-top: 0; font-size: .85rem;">Has any order had its Purchase sent to Meta more than once? Each row is one order. <strong>Anything other than "1 send" is a duplicate conversion.</strong> Compare the order count below against the real number of orders in the same period — if they match, Meta's higher number is a reporting or attribution question, not a tracking one.</p>
+					<div class="mpc-log-toolbar">
+						<button type="button" class="mpc-filter-pill active" data-audit-days="14">Last 14 days</button>
+						<button type="button" class="mpc-filter-pill" data-audit-days="30">Last 30 days</button>
+						<button type="button" class="mpc-filter-pill" data-audit-days="90">Last 90 days</button>
+					</div>
+					<p id="mpc-audit-summary" style="font-size:.9rem; margin: 12px 0;">Loading audit…</p>
+					<div class="mpc-table-wrap">
+						<table class="mpc-table">
+							<thead>
+								<tr>
+									<th>Order (event ID)</th>
+									<th>Sends</th>
+									<th>Accepted by Meta</th>
+									<th>Triggered by</th>
+									<th>First sent</th>
+									<th>Last sent</th>
+								</tr>
+							</thead>
+							<tbody id="mpc-audit-body">
+								<tr><td colspan="6" style="text-align:center; color: var(--mpc-text-dim); padding: 30px;">Loading audit…</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+
+			<div class="mpc-card">
+				<div class="mpc-card-head">
 					<span class="dashicons dashicons-editor-table"></span>
 					<h3>CAPI Event Log</h3>
 				</div>

@@ -25,12 +25,44 @@ jQuery(document).ready(function($) {
 			}
 		});
 	}
-	$(document).on('click', '.mpc-filter-pill', function() {
-		$('.mpc-filter-pill').removeClass('active');
+	$(document).on('click', '.mpc-filter-pill[data-filter]', function() {
+		$('.mpc-filter-pill[data-filter]').removeClass('active');
 		$(this).addClass('active');
 		mpcLogFilter = $(this).data('filter');
 		mpc_apply_log_filter();
 	});
+
+	// ── Purchase Send Audit ──
+	var mpcAuditDays = 14;
+	function mpc_fetch_audit() {
+		$.post(ajaxurl, {
+			action: 'mpc_purchase_audit',
+			days: mpcAuditDays,
+			mpc_nonce: $('#mpc-settings-form input[name="mpc_nonce"]').val()
+		}, function(res) {
+			if (!res.success) { return; }
+			$('#mpc-audit-body').html(res.data.html);
+			var d = res.data;
+			var msg;
+			if (d.orders === 0) {
+				msg = 'No Purchase events logged in the last ' + d.days + ' days.';
+			} else if (d.duplicated === 0) {
+				msg = '<strong>' + d.orders + '</strong> orders, <strong>' + d.total + '</strong> Purchase events sent — no duplicates. '
+				    + 'If Meta reports more conversions than you have orders, the cause is outside this plugin.';
+			} else {
+				msg = '<strong style="color:#c00;">' + d.duplicated + ' of ' + d.orders + ' orders were sent more than once.</strong> '
+				    + d.total + ' Purchase events for ' + d.orders + ' orders in the last ' + d.days + ' days.';
+			}
+			$('#mpc-audit-summary').html(msg);
+		});
+	}
+	$(document).on('click', '[data-audit-days]', function() {
+		$('[data-audit-days]').removeClass('active');
+		$(this).addClass('active');
+		mpcAuditDays = $(this).data('audit-days');
+		mpc_fetch_audit();
+	});
+	mpc_fetch_audit();
 
 	// ── Auto-Refresh Event Logs ──
 	function mpc_fetch_logs() {
