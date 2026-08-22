@@ -20,6 +20,7 @@ class AdminMenu {
 		add_action( 'wp_ajax_mpc_test_token', [ $this, 'ajax_test_token' ] );
 		add_action( 'wp_ajax_mpc_fetch_logs_html', [ $this, 'ajax_fetch_logs_html' ] );
 		add_action( 'wp_ajax_mpc_purchase_audit', [ $this, 'ajax_purchase_audit' ] );
+		add_action( 'wp_ajax_mpc_export_diagnostics', [ $this, 'ajax_export_diagnostics' ] );
 	}
 
 	public function register_menus() {
@@ -262,6 +263,128 @@ class AdminMenu {
 			'duplicated' => $duplicated,
 			'days'       => $days,
 		] );
+	}
+
+	/**
+	 * Download a diagnostic export as JSON.
+	 *
+	 * Deliberately carries NO personal data and NO credentials: only per-order
+	 * send counts, HTTP statuses, timestamps and configuration booleans. Event
+	 * payloads (which hold hashed PII, IPs and user agents) and the access token
+	 * are never included, so the file is safe to hand to a third party.
+	 */
+	public function ajax_export_diagnostics() {
+		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', '', [ 'response' => 403 ] );
+		check_ajax_referer( 'mpc_save_settings', 'mpc_nonce' );
+
+		global $wpdb;
+		$days = isset( $_REQUEST['days'] ) ? max( 1, min( 90, (int) $_REQUEST['days'] ) ) : 30;
+
+		// ── Purchase sends per order, from the event log ──
+		$audit = $wpdb->get_results( $wpdb->prepare(
+			"SELECT event_id,
+			        COUNT(*) AS sends,
+			        SUM(CASE WHEN CAST(status AS UNSIGNED) BETWEEN 200 AND 299 THEN 1 ELSE 0 END) AS accepted,
+			        GROUP_CONCAT(status ORDER BY id) AS statuses,
+			        MIN(created_at) AS first_sent,
+			        MAX(created_at) AS last_sent
+			 FROM {$wpdb->prefix}mpc_event_logs
+			 WHERE event_name = 'Purchase' AND created_at >= DATE_SUB(NOW(), INTERVAL %d DAY)
+			 GROUP BY event_id
+			 ORDER BY MIN(created_at) ASC",
+			$days
+		), ARRAY_A );
+
+		// ── Purchase sends per calendar day (send time, database timezone) ──
+		$sends_by_day = $wpdb->get_results( $wpdb->prepare(
+			"SELECT DATE(created_at) AS day, COUNT(*) AS sends, COUNT(DISTINCT event_id) AS distinct_orders
+			 FROM {$wpdb->prefix}mpc_event_logs
+			 WHERE event_name = 'Purchase' AND created_at >= DATE_SUB(NOW(), INTERVAL %d DAY)
+			 GROUP BY DATE(created_at) ORDER BY day ASC",
+			$days
+		), ARRAY_A );
+
+		// ── Real WooCommerce order counts per day, for comparison ──
+		$orders_by_day  = [];
+		$orders_capped  = false;
+		$orders_cap     = 1000;
+		if ( function_exists( 'wc_get_orders' ) ) {
+			$order_ids = wc_get_orders( [
+				'status'       => [ 'wc-processing', 'wc-completed' ],
+				'date_created' => '>' . ( time() - $days * DAY_IN_SECONDS ),
+				'limit'        => $orders_cap,
+				'return'       => 'ids',
+			] );
+			$orders_capped = ( count( (array) $order_ids ) >= $orders_cap );
+			foreach ( (array) $order_ids as $oid ) {
+				$o = wc_get_order( $oid );
+				if ( ! $o || ! $o->get_date_created() ) continue;
+				$day = $o->get_date_created()->date( 'Y-m-d' );
+				$orders_by_day[ $day ] = ( $orders_by_day[ $day ] ?? 0 ) + 1;
+			}
+			ksort( $orders_by_day );
+		}
+
+		// ── Claim table, when present ──
+		$claims      = [];
+		$claim_table = $wpdb->prefix . 'mpc_purchase_sent';
+		if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $claim_table ) ) === $claim_table ) {
+			$claims = $wpdb->get_results(
+				"SELECT order_id, source, attempts, delivered, claimed_at FROM {$claim_table} ORDER BY order_id DESC LIMIT 500",
+				ARRAY_A
+			);
+		}
+
+		$export = [
+			'generated_at_utc' => gmdate( 'c' ),
+			'window_days'      => $days,
+			'environment'      => [
+				'plugin_version' => MPC_VERSION,
+				'wp_version'     => get_bloginfo( 'version' ),
+				'wc_version'     => defined( 'WC_VERSION' ) ? WC_VERSION : null,
+				'php_version'    => PHP_VERSION,
+				'hpos_enabled'   => class_exists( '\Automattic\WooCommerce\Utilities\OrderUtil' )
+					? \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()
+					: null,
+				'site_timezone'  => wp_timezone_string(),
+				// The log's created_at uses the DATABASE clock, not the site's.
+				// Both are reported so timestamps can be lined up with Meta's.
+				'db_now'         => $wpdb->get_var( 'SELECT NOW()' ),
+				'db_utc_now'     => $wpdb->get_var( 'SELECT UTC_TIMESTAMP()' ),
+			],
+			'settings' => [
+				'purchase_event_enabled' => (bool) get_option( 'mpc_ev_purchase', 1 ),
+				'purchase_status_filter' => (bool) get_option( 'mpc_purchase_status_filter', 1 ),
+				'recovery_cron_enabled'  => (bool) get_option( 'mpc_enable_acr', 1 ),
+				'consent_required'       => (bool) get_option( 'mpc_consent_required', 0 ),
+				'consent_provider'       => get_option( 'mpc_consent_provider', 'none' ),
+				'pixel_id_set'           => (bool) get_option( 'mpc_pixel_id' ),
+				'capi_token_set'         => (bool) get_option( 'mpc_capi_token' ),
+				'test_event_code_set'    => (bool) get_option( 'mpc_test_code' ),
+			],
+			'cron' => [
+				'next_recovery_run'  => wp_next_scheduled( 'mpc_nightly_recovery_cron' ),
+				'next_retry_run'     => wp_next_scheduled( 'mpc_retry_failed_events' ),
+				'wp_cron_disabled'   => defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON,
+			],
+			'event_log' => [
+				'total_rows'    => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}mpc_event_logs" ),
+				'purchase_rows' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}mpc_event_logs WHERE event_name = 'Purchase'" ),
+				'oldest_row'    => $wpdb->get_var( "SELECT MIN(created_at) FROM {$wpdb->prefix}mpc_event_logs" ),
+				'newest_row'    => $wpdb->get_var( "SELECT MAX(created_at) FROM {$wpdb->prefix}mpc_event_logs" ),
+			],
+			'purchase_sends_by_day' => $sends_by_day,
+			'real_orders_by_day'    => $orders_by_day,
+			'real_orders_truncated' => $orders_capped,
+			'purchase_audit'        => $audit,
+			'claims'                => $claims,
+		];
+
+		nocache_headers();
+		header( 'Content-Type: application/json; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename=mpc-diagnostics-' . gmdate( 'Ymd-Hi' ) . '.json' );
+		echo wp_json_encode( $export, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		exit;
 	}
 
 	public function ajax_fetch_logs_html() {

@@ -571,6 +571,12 @@
 						<button type="button" class="mpc-filter-pill" data-audit-days="90">Last 90 days</button>
 					</div>
 					<p id="mpc-audit-summary" style="font-size:.9rem; margin: 12px 0;">Loading audit…</p>
+					<p style="margin: 0 0 16px;">
+						<button type="button" class="mpc-btn mpc-btn-sm mpc-btn-outline" id="mpc-export-diagnostics">
+							<span class="dashicons dashicons-download" style="vertical-align: text-bottom;"></span> Download diagnostic export
+						</button>
+						<span style="color: var(--mpc-text-dim); font-size:.8rem; margin-left:8px;">JSON file with per-order send counts, daily order totals and configuration. Contains no customer data and no access token.</span>
+					</p>
 					<div class="mpc-table-wrap">
 						<table class="mpc-table">
 							<thead>

@@ -56,6 +56,13 @@ jQuery(document).ready(function($) {
 			$('#mpc-audit-summary').html(msg);
 		});
 	}
+	$(document).on('click', '#mpc-export-diagnostics', function() {
+		var nonce = $('#mpc-settings-form input[name="mpc_nonce"]').val();
+		window.location = ajaxurl + '?action=mpc_export_diagnostics'
+			+ '&days=' + encodeURIComponent(mpcAuditDays)
+			+ '&mpc_nonce=' + encodeURIComponent(nonce);
+	});
+
 	$(document).on('click', '[data-audit-days]', function() {
 		$('[data-audit-days]').removeClass('active');
 		$(this).addClass('active');
