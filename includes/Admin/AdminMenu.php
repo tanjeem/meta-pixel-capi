@@ -73,6 +73,7 @@ class AdminMenu {
 		update_option( 'mpc_purchase_status_filter', isset( $_POST['mpc_purchase_status_filter'] ) ? 1 : 0 );
 		update_option( 'mpc_enable_ltv', isset( $_POST['mpc_enable_ltv'] ) ? 1 : 0 );
 		update_option( 'mpc_enable_acr', isset( $_POST['mpc_enable_acr'] ) ? 1 : 0 );
+		update_option( 'mpc_log_retention_days', max( 0, min( 3650, (int) ( $_POST['mpc_log_retention_days'] ?? 30 ) ) ) );
 
 		// Cart Recovery
 		update_option( 'mpc_enable_abandoned_cart', isset( $_POST['mpc_enable_abandoned_cart'] ) ? 1 : 0 );
@@ -305,12 +306,18 @@ class AdminMenu {
 		), ARRAY_A );
 
 		// ── Real WooCommerce order counts per day, for comparison ──
-		$orders_by_day  = [];
-		$orders_capped  = false;
-		$orders_cap     = 1000;
+		// Every status, not just processing/completed — stores with a COD or
+		// courier workflow keep orders in custom statuses, and filtering to the
+		// two core paid ones reported zero orders on days that plainly had them.
+		$orders_by_day      = [];
+		$paid_orders_by_day = [];
+		$orders_by_status   = [];
+		$orders_capped      = false;
+		$orders_cap         = 2000;
+		$paid_statuses      = [ 'processing', 'completed' ];
 		if ( function_exists( 'wc_get_orders' ) ) {
 			$order_ids = wc_get_orders( [
-				'status'       => [ 'wc-processing', 'wc-completed' ],
+				'status'       => 'any',
 				'date_created' => '>' . ( time() - $days * DAY_IN_SECONDS ),
 				'limit'        => $orders_cap,
 				'return'       => 'ids',
@@ -319,10 +326,18 @@ class AdminMenu {
 			foreach ( (array) $order_ids as $oid ) {
 				$o = wc_get_order( $oid );
 				if ( ! $o || ! $o->get_date_created() ) continue;
-				$day = $o->get_date_created()->date( 'Y-m-d' );
-				$orders_by_day[ $day ] = ( $orders_by_day[ $day ] ?? 0 ) + 1;
+				$day    = $o->get_date_created()->date( 'Y-m-d' );
+				$status = $o->get_status();
+
+				$orders_by_day[ $day ]     = ( $orders_by_day[ $day ] ?? 0 ) + 1;
+				$orders_by_status[ $status ] = ( $orders_by_status[ $status ] ?? 0 ) + 1;
+				if ( in_array( $status, $paid_statuses, true ) ) {
+					$paid_orders_by_day[ $day ] = ( $paid_orders_by_day[ $day ] ?? 0 ) + 1;
+				}
 			}
 			ksort( $orders_by_day );
+			ksort( $paid_orders_by_day );
+			arsort( $orders_by_status );
 		}
 
 		// ── Claim table, when present ──
@@ -372,10 +387,15 @@ class AdminMenu {
 				'purchase_rows' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}mpc_event_logs WHERE event_name = 'Purchase'" ),
 				'oldest_row'    => $wpdb->get_var( "SELECT MIN(created_at) FROM {$wpdb->prefix}mpc_event_logs" ),
 				'newest_row'    => $wpdb->get_var( "SELECT MAX(created_at) FROM {$wpdb->prefix}mpc_event_logs" ),
+				'retention_days'          => \Mpc\Tracker\LogPruner::retention_days(),
+				'purchase_retention_days' => \Mpc\Tracker\LogPruner::PURCHASE_RETENTION_DAYS,
+				'next_prune_run'          => wp_next_scheduled( 'mpc_prune_event_logs' ),
 			],
 			'purchase_sends_by_day' => $sends_by_day,
-			'real_orders_by_day'    => $orders_by_day,
-			'real_orders_truncated' => $orders_capped,
+			'orders_by_day_all_statuses' => $orders_by_day,
+			'orders_by_day_paid_only'    => $paid_orders_by_day,
+			'orders_by_status'           => $orders_by_status,
+			'orders_truncated'           => $orders_capped,
 			'purchase_audit'        => $audit,
 			'claims'                => $claims,
 		];

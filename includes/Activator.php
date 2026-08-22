@@ -21,7 +21,8 @@ class Activator {
 			response text NULL,
 			created_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
 			PRIMARY KEY  (id),
-			KEY event_lookup (event_name,event_id)
+			KEY event_lookup (event_name,event_id),
+			KEY created_at (created_at)
 		) $charset_collate;
 		
 		CREATE TABLE {$wpdb->prefix}mpc_retry_queue (
@@ -64,6 +65,9 @@ class Activator {
 		}
 		if ( ! wp_next_scheduled( 'mpc_scan_abandoned_carts' ) ) {
 			wp_schedule_event( time(), 'hourly', 'mpc_scan_abandoned_carts' );
+		}
+		if ( ! wp_next_scheduled( 'mpc_prune_event_logs' ) ) {
+			wp_schedule_event( time(), 'daily', 'mpc_prune_event_logs' );
 		}
 	}
 }

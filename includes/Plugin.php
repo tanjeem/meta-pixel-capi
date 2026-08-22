@@ -22,6 +22,7 @@ class Plugin {
 		Tracker\Capi::get_instance();
 		Tracker\RetryQueue::get_instance();
 		Tracker\RecoveryCron::get_instance();
+		Tracker\LogPruner::get_instance();
 		Orders\FakeProtection::get_instance();
 		Orders\Blocklist::get_instance();
 		Marketing\CatalogFeed::get_instance();

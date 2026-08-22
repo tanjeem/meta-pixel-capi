@@ -36,6 +36,7 @@ $options = [
 	'mpc_purchase_status_filter',
 	'mpc_enable_ltv',
 	'mpc_enable_acr',
+	'mpc_log_retention_days',
 	'mpc_enable_abandoned_cart',
 	'mpc_recovery_subject',
 	'mpc_recovery_message',
@@ -76,7 +77,7 @@ foreach ( $tables as $table ) {
 }
 
 // ── Scheduled cron events ────────────────────────────────────────────────
-foreach ( [ 'mpc_retry_failed_events', 'mpc_scan_abandoned_carts', 'mpc_nightly_recovery_cron' ] as $hook ) {
+foreach ( [ 'mpc_retry_failed_events', 'mpc_scan_abandoned_carts', 'mpc_nightly_recovery_cron', 'mpc_prune_event_logs' ] as $hook ) {
 	wp_clear_scheduled_hook( $hook );
 }
 

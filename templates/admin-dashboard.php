@@ -549,6 +549,13 @@
 							<button type="button" class="mpc-btn mpc-btn-sm mpc-btn-outline mpc-btn-danger" id="mpc-clear-logs">Clear All Logs</button>
 						</div>
 						<div id="mpc-debug-msg" style="margin-top: 12px; font-size: .85rem; color: var(--mpc-success);"></div>
+
+						<hr style="border:0; border-top:1px solid var(--mpc-border); margin:18px 0;">
+						<div class="mpc-field">
+							<label for="mpc_log_retention_days">Event log retention (days)</label>
+							<input type="number" min="0" max="3650" step="1" id="mpc_log_retention_days" name="mpc_log_retention_days" value="<?php echo esc_attr( get_option( 'mpc_log_retention_days', 30 ) ); ?>" />
+							<small>Events older than this are deleted nightly. <strong>0 keeps everything</strong> &mdash; that is how the log grows to hundreds of thousands of rows. Purchase events are exempt and kept for <?php echo (int) \Mpc\Tracker\LogPruner::PURCHASE_RETENTION_DAYS; ?> days so the Purchase Send Audit keeps working.</small>
+						</div>
 					</div>
 				</div>
 			</div>
