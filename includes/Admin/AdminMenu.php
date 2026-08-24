@@ -399,6 +399,36 @@ class AdminMenu {
 			arsort( $orders_by_status );
 		}
 
+		// ── How stale is event_time when we send? ──
+		//
+		// Meta flags Purchase events whose event_time is far in the past. Since
+		// 2.2.1 event_time is the order's creation time, so the staleness is
+		// exactly the delay between the order being placed and the Purchase hook
+		// firing. Measure it rather than guess at it: a large lag means Purchase
+		// is firing on a later status transition, not at checkout.
+		$send_lag = [];
+		if ( function_exists( 'wc_get_order' ) ) {
+			foreach ( array_slice( (array) $audit, -40 ) as $row ) {
+				if ( ! preg_match( '/^order_(\d+)$/', (string) $row['event_id'], $m ) ) continue;
+				$o = wc_get_order( (int) $m[1] );
+				if ( ! $o || ! $o->get_date_created() ) continue;
+
+				$created_utc = (int) $o->get_date_created()->getTimestamp();
+				$sent_utc    = strtotime( $row['first_sent'] . ' UTC' );
+				// first_sent is in the database's timezone; convert via its offset.
+				$db_offset   = (int) $wpdb->get_var( 'SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW())' );
+				$sent_utc    = $sent_utc - $db_offset;
+
+				$send_lag[] = [
+					'order_id'          => (int) $m[1],
+					'status'            => $o->get_status(),
+					'order_created_utc' => gmdate( 'Y-m-d H:i:s', $created_utc ),
+					'first_sent_utc'    => gmdate( 'Y-m-d H:i:s', $sent_utc ),
+					'lag_minutes'       => (int) round( ( $sent_utc - $created_utc ) / 60 ),
+				];
+			}
+		}
+
 		// ── Claim table, when present ──
 		$claims      = [];
 		$claim_table = $wpdb->prefix . 'mpc_purchase_sent';
@@ -457,6 +487,7 @@ class AdminMenu {
 			'orders_truncated'           => $orders_capped,
 			'purchase_audit'        => $audit,
 			'claims'                => $claims,
+			'purchase_send_lag'     => $send_lag,
 			'conflict_scan'         => \Mpc\Diagnostics\ConflictScanner::scan(),
 		];
 

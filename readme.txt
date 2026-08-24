@@ -75,6 +75,8 @@ In Meta Events Manager, open your dataset/pixel, go to Settings → Conversions 
 == Changelog ==
 
 = 2.2.8 =
+* Fixed: the `fbc` click-ID cookie was built with a **seconds** timestamp where Meta's format requires **milliseconds**. `fb.1.<creationTime>.<fbclid>` with a 10-digit seconds value resolves to January 1970, which Meta reports as "creationTime is dated before the click ID was created" and which degrades attribution. Now built on the same millisecond clock already used for `_fbp`.
+* Added: `purchase_send_lag` in the diagnostic export — the delay between each order being placed and its Purchase event being sent, which is exactly what Meta's "timestamp too far in the past" warning measures.
 * Fixed: phone numbers were hashed without a country code, so **every phone match silently failed**. WooCommerce stores what the shopper typed — "01712345678" — but Meta matches on the full international number, "8801712345678". Phone is now normalised to digits-only E.164 using the order's billing country (falling back to the store's base country) before hashing: a leading "+" is treated as already international, a leading "0" as a trunk prefix to replace with the country code. Applied identically to the browser pixel and the Conversions API so both still deduplicate. Override with the `mpc_normalized_phone` filter. Expect a meaningful Event Match Quality gain, especially on COD stores where email is often blank or fake.
 
 = 2.2.7 =

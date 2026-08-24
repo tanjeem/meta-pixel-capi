@@ -243,7 +243,14 @@ class Capi {
 		if ( ! empty( $_COOKIE['_fbc'] ) ) {
 			$data['fbc'] = sanitize_text_field( $_COOKIE['_fbc'] );
 		} elseif ( ! empty( $_GET['fbclid'] ) ) {
-			$data['fbc'] = 'fb.1.' . time() . '.' . sanitize_text_field( $_GET['fbclid'] );
+			// fb.<subdomainIndex>.<creationTime>.<fbclid> — creationTime is a UNIX
+			// timestamp in MILLISECONDS. time() returns seconds, and a 10-digit
+			// seconds value read as milliseconds resolves to January 1970, which
+			// Meta reports as "creationTime is dated before the click ID was
+			// created". Pixel::generate_server_cookies() already builds _fbp in
+			// milliseconds; this is the same clock.
+			$fbc_created = (int) round( microtime( true ) * 1000 );
+			$data['fbc'] = 'fb.1.' . $fbc_created . '.' . sanitize_text_field( $_GET['fbclid'] );
 			if ( function_exists('WC') && isset( WC()->session ) ) {
 				WC()->session->set( 'mpc_derived_fbc', $data['fbc'] );
 			}
