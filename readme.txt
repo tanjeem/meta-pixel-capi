@@ -4,7 +4,7 @@ Tags: facebook pixel, conversions api, woocommerce, meta pixel, capi
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 2.2.7
+Stable tag: 2.2.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -73,6 +73,9 @@ No. Browser and server events share an `event_id` so Meta deduplicates them auto
 In Meta Events Manager, open your dataset/pixel, go to Settings → Conversions API → Generate access token.
 
 == Changelog ==
+
+= 2.2.8 =
+* Fixed: phone numbers were hashed without a country code, so **every phone match silently failed**. WooCommerce stores what the shopper typed — "01712345678" — but Meta matches on the full international number, "8801712345678". Phone is now normalised to digits-only E.164 using the order's billing country (falling back to the store's base country) before hashing: a leading "+" is treated as already international, a leading "0" as a trunk prefix to replace with the country code. Applied identically to the browser pixel and the Conversions API so both still deduplicate. Override with the `mpc_normalized_phone` filter. Expect a meaningful Event Match Quality gain, especially on COD stores where email is often blank or fake.
 
 = 2.2.7 =
 * Added: **Duplicate Source Scan** on the Event Logs tab. If Meta reports more conversions than this plugin actually sent, the extra events come from somewhere else — this finds it. Checks active plugins known to send Meta events (flagging any configured with the same Pixel ID), fetches your real site HTML to catch extra `fbq('init')` calls from a theme, page builder or hard-coded snippet, and detects Google Tag Manager containers that can fire Meta tags without appearing in the plugin list. Results are included in the diagnostic export.

@@ -120,7 +120,10 @@ class Capi {
 		$data = $existing;
 
 		if ( ! empty( $raw['email'] ) )      $data['em']      = hash( 'sha256', strtolower( trim( $raw['email'] ) ) );
-		if ( ! empty( $raw['phone'] ) )      $data['ph']      = hash( 'sha256', preg_replace( '/[^0-9]/', '', $raw['phone'] ) );
+		if ( ! empty( $raw['phone'] ) ) {
+			$phone = self::normalize_phone( $raw['phone'], $raw['country'] ?? '' );
+			if ( $phone !== '' ) $data['ph'] = hash( 'sha256', $phone );
+		}
 		if ( ! empty( $raw['first_name'] ) ) $data['fn']      = hash( 'sha256', strtolower( trim( $raw['first_name'] ) ) );
 		if ( ! empty( $raw['last_name'] ) )  $data['ln']      = hash( 'sha256', strtolower( trim( $raw['last_name'] ) ) );
 		if ( ! empty( $raw['city'] ) )       $data['ct']      = hash( 'sha256', strtolower( preg_replace( '/\s+/', '', $raw['city'] ) ) );
@@ -136,6 +139,102 @@ class Capi {
 	// ═══════════════════════════════════════════════════════════
 	// USER DATA HELPERS
 	// ═══════════════════════════════════════════════════════════
+
+	/**
+	 * Normalise a phone number to the digits-only E.164 form Meta expects.
+	 *
+	 * Meta matches on the full international number. WooCommerce stores whatever
+	 * the shopper typed, which in most markets is the national format with a
+	 * trunk prefix — "01712345678" in Bangladesh. Hashing that as-is produces a
+	 * string Meta has never seen, so every phone match silently fails. On a COD
+	 * store, where email is often blank or fake, phone is frequently the only
+	 * strong identifier there is.
+	 *
+	 * Rules, in order:
+	 *   - A leading "+" means the shopper already gave an international number.
+	 *   - A leading "0" is a trunk prefix: strip it and prepend the country code.
+	 *   - Otherwise, if it already starts with the country code and is long
+	 *     enough to be a complete number, leave it alone.
+	 *   - Otherwise prepend the country code.
+	 *
+	 * The country comes from the order or checkout; failing that, the store's own
+	 * base country. With no country at all we return digits unchanged rather than
+	 * guess, because a wrong country code matches nothing either.
+	 *
+	 * Both the browser pixel and CAPI call this, so the two always hash the same
+	 * string and continue to deduplicate.
+	 *
+	 * @param string $phone        Raw phone as entered.
+	 * @param string $country_code ISO-3166 alpha-2, e.g. "BD".
+	 * @return string Digits only, or '' when there is nothing usable.
+	 */
+	public static function normalize_phone( $phone, $country_code = '' ) {
+		$phone = trim( (string) $phone );
+		if ( $phone === '' ) {
+			return '';
+		}
+
+		$is_international = ( strpos( $phone, '+' ) === 0 );
+		$digits           = preg_replace( '/[^0-9]/', '', $phone );
+
+		if ( $digits === '' ) {
+			return '';
+		}
+
+		if ( ! $is_international ) {
+			$calling_code = self::country_calling_code( $country_code );
+
+			if ( $calling_code !== '' ) {
+				if ( strpos( $digits, '0' ) === 0 ) {
+					// National format with a trunk prefix.
+					$national = ltrim( $digits, '0' );
+					$digits   = ( $national === '' ) ? '' : $calling_code . $national;
+				} elseif ( strpos( $digits, $calling_code ) !== 0 || strlen( $digits ) < strlen( $calling_code ) + 7 ) {
+					// Does not already carry a complete country code.
+					$digits = $calling_code . $digits;
+				}
+			}
+		}
+
+		/**
+		 * Filter the normalised phone number before hashing.
+		 *
+		 * The rules above cannot be right for every numbering plan. Return your
+		 * own digits-only E.164 string to override them.
+		 *
+		 * @param string $digits       Normalised digits.
+		 * @param string $phone        The original raw value.
+		 * @param string $country_code ISO-3166 alpha-2 country used.
+		 */
+		return (string) apply_filters( 'mpc_normalized_phone', $digits, $phone, $country_code );
+	}
+
+	/**
+	 * Dialling code for a country, digits only and without the leading "+".
+	 * Falls back to the store's base country when none is supplied.
+	 */
+	private static function country_calling_code( $country_code ) {
+		$country_code = strtoupper( trim( (string) $country_code ) );
+
+		if ( $country_code === '' && function_exists( 'wc_get_base_location' ) ) {
+			$base         = wc_get_base_location();
+			$country_code = strtoupper( (string) ( $base['country'] ?? '' ) );
+		}
+		if ( $country_code === '' ) {
+			return '';
+		}
+
+		if ( ! function_exists( 'WC' ) || ! WC()->countries || ! method_exists( WC()->countries, 'get_country_calling_code' ) ) {
+			return '';
+		}
+
+		$calling_code = WC()->countries->get_country_calling_code( $country_code );
+		if ( is_array( $calling_code ) ) {
+			$calling_code = $calling_code[0] ?? '';
+		}
+
+		return preg_replace( '/[^0-9]/', '', (string) $calling_code );
+	}
 
 	private function get_fbp_fbc() {
 		$data = [];
@@ -209,7 +308,10 @@ class Capi {
 			$order    = $order_id ? wc_get_order( $order_id ) : null;
 			if ( $order ) {
 				if ( $order->get_billing_email() )      $am['em']      = hash( 'sha256', strtolower( trim( $order->get_billing_email() ) ) );
-				if ( $order->get_billing_phone() )      $am['ph']      = hash( 'sha256', preg_replace( '/[^0-9]/', '', $order->get_billing_phone() ) );
+				if ( $order->get_billing_phone() ) {
+					$phone = self::normalize_phone( $order->get_billing_phone(), $order->get_billing_country() );
+					if ( $phone !== '' ) $am['ph'] = hash( 'sha256', $phone );
+				}
 				if ( $order->get_billing_first_name() ) $am['fn']      = hash( 'sha256', strtolower( trim( $order->get_billing_first_name() ) ) );
 				if ( $order->get_billing_last_name() )  $am['ln']      = hash( 'sha256', strtolower( trim( $order->get_billing_last_name() ) ) );
 				if ( $order->get_billing_city() )       $am['ct']      = hash( 'sha256', strtolower( preg_replace( '/\s+/', '', $order->get_billing_city() ) ) );
@@ -591,7 +693,10 @@ class Capi {
 		];
 
 		if ( $order->get_billing_email() )     $extra_user_data['em']          = hash( 'sha256', strtolower( trim( $order->get_billing_email() ) ) );
-		if ( $order->get_billing_phone() )     $extra_user_data['ph']          = hash( 'sha256', preg_replace( '/[^0-9]/', '', $order->get_billing_phone() ) );
+		if ( $order->get_billing_phone() ) {
+			$phone = self::normalize_phone( $order->get_billing_phone(), $order->get_billing_country() );
+			if ( $phone !== '' ) $extra_user_data['ph'] = hash( 'sha256', $phone );
+		}
 		if ( $order->get_billing_first_name()) $extra_user_data['fn']          = hash( 'sha256', strtolower( trim( $order->get_billing_first_name() ) ) );
 		if ( $order->get_billing_last_name() ) $extra_user_data['ln']          = hash( 'sha256', strtolower( trim( $order->get_billing_last_name() ) ) );
 		if ( $order->get_billing_city() )      $extra_user_data['ct']          = hash( 'sha256', strtolower( preg_replace( '/\s+/', '', $order->get_billing_city() ) ) );
