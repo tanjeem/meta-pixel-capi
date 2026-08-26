@@ -459,6 +459,10 @@
 							<div class="mpc-switch-label">Automatic Conversion Recovery (ACR)<small>Nightly background job to push missed/failed orders to Meta.</small></div>
 							<label class="mpc-toggle-track"><input type="checkbox" name="mpc_enable_acr" value="1" <?php checked(1, get_option('mpc_enable_acr', 1)); ?>><span class="mpc-toggle-slider"></span></label>
 						</div>
+						<div class="mpc-switch">
+							<div class="mpc-switch-label">Filter Crawler Traffic<small>Skip PageView, ViewContent, ViewCategory and ViewCart for bots. They never run the browser pixel, so they inflate server-only events and drag down Event Match Quality. Orders and cart actions are never filtered.</small></div>
+							<label class="mpc-toggle-track"><input type="checkbox" name="mpc_filter_bots" value="1" <?php checked(1, get_option('mpc_filter_bots', 1)); ?>><span class="mpc-toggle-slider"></span></label>
+						</div>
 					</div>
 				</div>
 

@@ -4,7 +4,7 @@ Tags: facebook pixel, conversions api, woocommerce, meta pixel, capi
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 2.2.8
+Stable tag: 2.2.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -73,6 +73,10 @@ No. Browser and server events share an `event_id` so Meta deduplicates them auto
 In Meta Events Manager, open your dataset/pixel, go to Settings → Conversions API → Generate access token.
 
 == Changelog ==
+
+= 2.2.9 =
+* Fixed: the browser Purchase depended entirely on `woocommerce_thankyou`, one of the most frequently overridden templates in WooCommerce. Themes, page builders and COD/courier plugins routinely replace it, and when they do the only Purchase Meta ever sees is the server one — which is why "additional conversions reported" stays unavailable. It now also renders from the footer on the order-received page when the hook did not fire, with a once-per-order guard so the two can never double up. Custom confirmation pages can point it at the right order with the `mpc_browser_purchase_order_id` filter.
+* Added: crawler filtering for passive server events. PageView, ViewContent, ViewCategory and ViewCart are no longer sent for bots, which never run the browser pixel and so arrive as server-only events that bury the pixel-to-CAPI ratio, carry no match data, and fill the event log. AddToCart, InitiateCheckout and Purchase are never filtered — a real order is a real order whatever the user agent says. Toggle under Settings; override with the `mpc_is_bot` filter.
 
 = 2.2.8 =
 * Fixed: the `fbc` click-ID cookie was built with a **seconds** timestamp where Meta's format requires **milliseconds**. `fb.1.<creationTime>.<fbclid>` with a 10-digit seconds value resolves to January 1970, which Meta reports as "creationTime is dated before the click ID was created" and which degrades attribution. Now built on the same millisecond clock already used for `_fbp`.

@@ -37,6 +37,7 @@ $options = [
 	'mpc_enable_ltv',
 	'mpc_enable_acr',
 	'mpc_log_retention_days',
+	'mpc_filter_bots',
 	'mpc_enable_abandoned_cart',
 	'mpc_recovery_subject',
 	'mpc_recovery_message',

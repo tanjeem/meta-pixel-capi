@@ -67,6 +67,12 @@ class Capi {
 		add_action( 'woocommerce_order_status_processing',     [ $this, 'send_purchase_event_server_only' ] );
 		add_action( 'woocommerce_order_status_completed',      [ $this, 'send_purchase_event_server_only' ] );
 
+		// Fallback: render the browser Purchase on the order-received page even if
+		// `woocommerce_thankyou` never fired. Themes, page builders and COD or
+		// courier plugins routinely replace that template, and when they do the
+		// only Purchase Meta ever sees is the server one.
+		add_action( 'wp_footer', [ $this, 'maybe_print_purchase_fallback' ], 25 );
+
 		// ── AJAX Pixel Helpers ───────────────────────────────────────
 		add_filter( 'woocommerce_add_to_cart_fragments', [ $this, 'add_to_cart_fragment' ] );
 		add_action( 'wp_footer', [ $this, 'print_client_add_to_cart' ], 20 );
@@ -234,6 +240,74 @@ class Capi {
 		}
 
 		return preg_replace( '/[^0-9]/', '', (string) $calling_code );
+	}
+
+	/**
+	 * Passive events not worth sending for a non-human visit.
+	 *
+	 * Anything requiring a deliberate action — AddToCart, InitiateCheckout,
+	 * Purchase — is deliberately absent: a real order is a real order whatever
+	 * the user agent claims, and suppressing one would lose a conversion.
+	 */
+	const BOT_FILTERED_EVENTS = [ 'PageView', 'ViewContent', 'ViewCategory', 'ViewCart' ];
+
+	/**
+	 * Whether this request looks like a crawler rather than a shopper.
+	 *
+	 * Server-side events fire for every request, including the crawlers, scanners
+	 * and preview bots that never execute JavaScript. The browser pixel cannot
+	 * see them, so they land as server-only traffic: they bury the pixel-to-CAPI
+	 * ratio Meta needs for "additional conversions reported", drag Event Match
+	 * Quality down (a bot carries no email, phone or click id), and fill the
+	 * event log with rows nobody will ever read.
+	 *
+	 * Deliberately conservative — matching only unmistakable crawler signatures,
+	 * because wrongly classifying a shopper as a bot silently drops real events.
+	 *
+	 * @return bool
+	 */
+	public static function is_bot() {
+		if ( ! get_option( 'mpc_filter_bots', 1 ) ) {
+			return false;
+		}
+
+		$agent = isset( $_SERVER['HTTP_USER_AGENT'] ) ? strtolower( sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) ) : '';
+
+		// No user agent at all is not a browser.
+		$is_bot = ( $agent === '' );
+
+		// Generic words need boundaries: a bare "bot" substring also matches real
+		// Android devices such as Cubot, which would silently drop real shoppers.
+		if ( ! $is_bot && preg_match( '/(?:^|[^a-z])(?:bot|crawler|crawl|spider|scraper)(?:[^a-z]|$)/', $agent ) ) {
+			$is_bot = true;
+		}
+
+		if ( ! $is_bot ) {
+			$signatures = [
+				'slurp', 'bingpreview', 'googleother', 'google-inspectiontool',
+				'facebookexternalhit', 'meta-externalagent', 'whatsapp', 'telegrambot',
+				'headlesschrome', 'phantomjs', 'puppeteer', 'playwright', 'lighthouse',
+				'curl/', 'wget/', 'python-requests', 'python-urllib', 'go-http-client',
+				'java/', 'okhttp', 'axios/', 'guzzlehttp', 'libwww-perl',
+				'ahrefs', 'semrush', 'mj12', 'dotbot', 'petalbot', 'dataforseo',
+				'pingdom', 'uptimerobot', 'statuscake', 'gtmetrix', 'newrelicpinger',
+				'wordpress/', 'jetpack', 'feedfetcher',
+			];
+			foreach ( $signatures as $needle ) {
+				if ( strpos( $agent, $needle ) !== false ) {
+					$is_bot = true;
+					break;
+				}
+			}
+		}
+
+		/**
+		 * Filter whether the current request is treated as a bot.
+		 *
+		 * @param bool   $is_bot Detection result.
+		 * @param string $agent  Lowercased user agent.
+		 */
+		return (bool) apply_filters( 'mpc_is_bot', $is_bot, $agent );
 	}
 
 	private function get_fbp_fbc() {
@@ -912,6 +986,61 @@ class Capi {
 		] );
 	}
 
+
+	/**
+	 * Render the browser Purchase from the footer when the thank-you hook did not.
+	 *
+	 * `woocommerce_thankyou` is the only hook that renders the browser copy, and
+	 * it is one of the most frequently overridden templates in WooCommerce. If a
+	 * shopper is sitting on the order-received page and no Purchase marker has
+	 * been printed for that order, print it here.
+	 *
+	 * print_browser_purchase() carries its own once-per-order guard, so this can
+	 * never double up with the thank-you hook.
+	 *
+	 * Stores whose confirmation page is somewhere else entirely can point this at
+	 * the right order with the `mpc_browser_purchase_order_id` filter.
+	 */
+	public function maybe_print_purchase_fallback() {
+		if ( is_admin() || ! get_option( 'mpc_ev_purchase', 1 ) ) {
+			return;
+		}
+
+		$order_id = 0;
+		if ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url( 'order-received' ) ) {
+			$order_id = absint( get_query_var( 'order-received' ) );
+		}
+
+		/**
+		 * Order id whose Purchase should be rendered on the current page.
+		 *
+		 * Return an order id to fire the browser Purchase on a custom confirmation
+		 * page that is not WooCommerce's order-received endpoint.
+		 *
+		 * @param int $order_id Detected order id, 0 when none.
+		 */
+		$order_id = (int) apply_filters( 'mpc_browser_purchase_order_id', $order_id );
+		if ( ! $order_id ) {
+			return;
+		}
+
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return;
+		}
+		if ( $order->get_meta( '_mpc_purchase_pixel_printed' ) ) {
+			return; // The thank-you hook already rendered it.
+		}
+		if ( get_option( 'mpc_purchase_status_filter', 1 ) && ! in_array( $order->get_status(), [ 'processing', 'completed' ], true ) ) {
+			return;
+		}
+		if ( apply_filters( 'mpc_block_purchase_event', false, $order ) ) {
+			return;
+		}
+
+		$this->print_browser_purchase( $order, Deduplication::get_order_event_id( $order_id ) );
+	}
+
 	// ═══════════════════════════════════════════════════════════
 	// AJAX PIXEL BRIDGE (AddToCart / RemoveFromCart fragments)
 	// ═══════════════════════════════════════════════════════════
@@ -969,6 +1098,11 @@ class Capi {
 
 		// Respect GDPR consent (Meta is an advertising platform).
 		if ( ! \Mpc\Consent\ConsentManager::allows( 'marketing' ) ) return;
+
+		// Skip passive events for crawlers. They never run the browser pixel, so
+		// every one of these is a server-only event that hurts the pixel-to-CAPI
+		// ratio and carries no match data.
+		if ( in_array( $event_name, self::BOT_FILTERED_EVENTS, true ) && self::is_bot() ) return;
 
 		// Meta rejects event_time older than 7 days or in the future — clamp to a
 		// safe range so a real purchase timestamp is used but never invalid.

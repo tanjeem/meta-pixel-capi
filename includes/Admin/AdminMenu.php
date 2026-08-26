@@ -74,6 +74,7 @@ class AdminMenu {
 		update_option( 'mpc_purchase_status_filter', isset( $_POST['mpc_purchase_status_filter'] ) ? 1 : 0 );
 		update_option( 'mpc_enable_ltv', isset( $_POST['mpc_enable_ltv'] ) ? 1 : 0 );
 		update_option( 'mpc_enable_acr', isset( $_POST['mpc_enable_acr'] ) ? 1 : 0 );
+		update_option( 'mpc_filter_bots', isset( $_POST['mpc_filter_bots'] ) ? 1 : 0 );
 		update_option( 'mpc_log_retention_days', max( 0, min( 3650, (int) ( $_POST['mpc_log_retention_days'] ?? 30 ) ) ) );
 
 		// Cart Recovery
@@ -460,6 +461,7 @@ class AdminMenu {
 				'purchase_event_enabled' => (bool) get_option( 'mpc_ev_purchase', 1 ),
 				'purchase_status_filter' => (bool) get_option( 'mpc_purchase_status_filter', 1 ),
 				'recovery_cron_enabled'  => (bool) get_option( 'mpc_enable_acr', 1 ),
+				'filter_bots'            => (bool) get_option( 'mpc_filter_bots', 1 ),
 				'consent_required'       => (bool) get_option( 'mpc_consent_required', 0 ),
 				'consent_provider'       => get_option( 'mpc_consent_provider', 'none' ),
 				'pixel_id_set'           => (bool) get_option( 'mpc_pixel_id' ),
