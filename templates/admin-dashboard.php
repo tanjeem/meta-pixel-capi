@@ -612,12 +612,13 @@
 									<th>Sends</th>
 									<th>Accepted by Meta</th>
 									<th>Triggered by</th>
+									<th>Timestamp lag</th>
+									<th>Browser pixel</th>
 									<th>First sent</th>
-									<th>Last sent</th>
 								</tr>
 							</thead>
 							<tbody id="mpc-audit-body">
-								<tr><td colspan="6" style="text-align:center; color: var(--mpc-text-dim); padding: 30px;">Loading audit…</td></tr>
+								<tr><td colspan="8" style="text-align:center; color: var(--mpc-text-dim); padding: 30px;">Loading audit…</td></tr>
 							</tbody>
 						</table>
 					</div>

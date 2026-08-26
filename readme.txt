@@ -4,7 +4,7 @@ Tags: facebook pixel, conversions api, woocommerce, meta pixel, capi
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 2.2.9
+Stable tag: 2.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -73,6 +73,9 @@ No. Browser and server events share an `event_id` so Meta deduplicates them auto
 In Meta Events Manager, open your dataset/pixel, go to Settings → Conversions API → Generate access token.
 
 == Changelog ==
+
+= 2.3.0 =
+* Added: **Timestamp lag** and **Browser pixel** columns to the Purchase Send Audit. Together they diagnose both of Meta's Purchase complaints without leaving WordPress — "timestamp too far in the past" and a pixel-to-CAPI ratio under 25%. The two usually share one cause: `woocommerce_thankyou` never running, so the first hook to fire is a much later status transition that carries the original order time. The summary line says so directly when the pattern appears.
 
 = 2.2.9 =
 * Fixed: the browser Purchase depended entirely on `woocommerce_thankyou`, one of the most frequently overridden templates in WooCommerce. Themes, page builders and COD/courier plugins routinely replace it, and when they do the only Purchase Meta ever sees is the server one — which is why "additional conversions reported" stays unavailable. It now also renders from the footer on the order-received page when the hook did not fire, with a once-per-order guard so the two can never double up. Custom confirmation pages can point it at the right order with the `mpc_browser_purchase_order_id` filter.

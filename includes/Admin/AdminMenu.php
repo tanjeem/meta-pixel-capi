@@ -222,6 +222,27 @@ class AdminMenu {
 			if ( (int) $r->sends > 1 ) $duplicated++;
 		}
 
+		// Per-order timing: which hook fired, how stale the timestamp was, and
+		// whether the browser pixel was ever printed. These three answer both of
+		// Meta's Purchase complaints — "timestamp too far in the past" and a
+		// pixel-to-CAPI ratio under 25% — and they usually share one cause:
+		// woocommerce_thankyou never running, so the first hook to fire is a much
+		// later status transition carrying the original order time.
+		$db_offset = (int) $wpdb->get_var( 'SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW())' );
+		$timing    = [];
+		if ( function_exists( 'wc_get_order' ) ) {
+			foreach ( array_slice( (array) $rows, 0, 50 ) as $r ) {
+				if ( ! preg_match( '/^order_(\d+)$/', (string) $r->event_id, $m ) ) continue;
+				$o = wc_get_order( (int) $m[1] );
+				if ( ! $o || ! $o->get_date_created() ) continue;
+				$sent_utc = strtotime( $r->first_sent . ' UTC' ) - $db_offset;
+				$timing[ $r->event_id ] = [
+					'lag_minutes'   => (int) round( ( $sent_utc - $o->get_date_created()->getTimestamp() ) / 60 ),
+					'pixel_printed' => (bool) $o->get_meta( '_mpc_purchase_pixel_printed' ),
+				];
+			}
+		}
+
 		// Triggering hook per order, when the claim table is present (2.2.4+).
 		$sources    = [];
 		$claim_table = $wpdb->prefix . 'mpc_purchase_sent';
@@ -235,12 +256,13 @@ class AdminMenu {
 
 		ob_start();
 		if ( empty( $rows ) ) : ?>
-			<tr><td colspan="6" style="text-align:center; color: var(--mpc-text-dim); padding: 30px;">No Purchase events logged in this window.</td></tr>
+			<tr><td colspan="8" style="text-align:center; color: var(--mpc-text-dim); padding: 30px;">No Purchase events logged in this window.</td></tr>
 		<?php else :
 			foreach ( $rows as $r ) :
 				$dupe   = ( (int) $r->sends > 1 );
 				$claim  = $sources[ $r->event_id ] ?? null;
 				$source = $claim ? $claim->source : '—';
+				$t      = $timing[ $r->event_id ] ?? null;
 		?>
 			<tr>
 				<td><strong><?php echo esc_html( $r->event_id ); ?></strong></td>
@@ -253,11 +275,38 @@ class AdminMenu {
 				</td>
 				<td><?php echo (int) $r->accepted; ?></td>
 				<td style="font-size:.75rem; color: var(--mpc-text-dim);"><?php echo esc_html( $source ); ?></td>
+				<td>
+					<?php if ( null === $t ) : ?>
+						<span style="color: var(--mpc-text-dim);">—</span>
+					<?php elseif ( $t['lag_minutes'] <= 5 ) : ?>
+						<span class="mpc-badge mpc-badge-ok"><?php echo (int) $t['lag_minutes']; ?> min</span>
+					<?php elseif ( $t['lag_minutes'] <= 60 ) : ?>
+						<span class="mpc-badge mpc-badge-warn"><?php echo (int) $t['lag_minutes']; ?> min</span>
+					<?php else : ?>
+						<span class="mpc-badge mpc-badge-danger"><?php echo esc_html( number_format_i18n( round( $t['lag_minutes'] / 60, 1 ), 1 ) ); ?> hrs</span>
+					<?php endif; ?>
+				</td>
+				<td>
+					<?php if ( null === $t ) : ?>
+						<span style="color: var(--mpc-text-dim);">—</span>
+					<?php elseif ( $t['pixel_printed'] ) : ?>
+						<span class="mpc-badge mpc-badge-ok">Yes</span>
+					<?php else : ?>
+						<span class="mpc-badge mpc-badge-danger">No</span>
+					<?php endif; ?>
+				</td>
 				<td style="font-size:.75rem;"><?php echo esc_html( $r->first_sent ); ?></td>
-				<td style="font-size:.75rem;"><?php echo esc_html( $r->last_sent ); ?></td>
 			</tr>
 		<?php endforeach; endif;
 		$html = ob_get_clean();
+
+		$measured   = count( $timing );
+		$no_pixel   = 0;
+		$stale      = 0;
+		foreach ( $timing as $t ) {
+			if ( ! $t['pixel_printed'] ) $no_pixel++;
+			if ( $t['lag_minutes'] > 60 ) $stale++;
+		}
 
 		wp_send_json_success( [
 			'html'       => $html,
@@ -265,6 +314,9 @@ class AdminMenu {
 			'total'      => $total,
 			'duplicated' => $duplicated,
 			'days'       => $days,
+			'measured'   => $measured,
+			'no_pixel'   => $no_pixel,
+			'stale'      => $stale,
 		] );
 	}
 

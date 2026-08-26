@@ -53,6 +53,19 @@ jQuery(document).ready(function($) {
 				msg = '<strong style="color:#c00;">' + d.duplicated + ' of ' + d.orders + ' orders were sent more than once.</strong> '
 				    + d.total + ' Purchase events for ' + d.orders + ' orders in the last ' + d.days + ' days.';
 			}
+			if (d.measured > 0 && (d.no_pixel > 0 || d.stale > 0)) {
+				msg += '<br><span style="color:var(--mpc-warning-text);">';
+				if (d.no_pixel > 0) {
+					msg += d.no_pixel + ' of ' + d.measured + ' recent orders never rendered the browser pixel. ';
+				}
+				if (d.stale > 0) {
+					msg += d.stale + ' were sent more than an hour after the order was placed, so their timestamp reaches Meta stale. ';
+				}
+				if (d.no_pixel > 0 && d.stale > 0) {
+					msg += 'Both point at the same thing: the thank-you page is not running, so Purchase fires on a later status change instead.';
+				}
+				msg += '</span>';
+			}
 			$('#mpc-audit-summary').html(msg);
 		});
 	}
